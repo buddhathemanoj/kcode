@@ -15,9 +15,14 @@ bun run dev              # Start Electron with hot reload
 # Build
 bun run build            # Compile app
 bun run package          # Package for current platform (dir)
-bun run package:mac      # Build macOS (DMG + ZIP)
+bun run package:mac      # Build macOS (DMG + ZIP) for both arm64 and x64
+bun run package:mac:arm64 # Build macOS for arm64 only
 bun run package:win      # Build Windows (NSIS + portable)
 bun run package:linux    # Build Linux (AppImage + DEB)
+
+# Release
+bun run release:local    # Build macOS arm64 locally (fast, for testing)
+bun run release          # Full release (all archs + upload to CDN)
 
 # Database (Drizzle + SQLite)
 bun run db:generate      # Generate migrations from schema
@@ -274,22 +279,38 @@ bun run dev
 
 ## Releasing a New Version
 
-### Release Commands
+### Local macOS Build (Recommended for Development)
 
 ```bash
-# Full release (build, sign, submit notarization, upload to CDN)
-bun run release
+# Build arm64 only - fast local build for testing
+bun run release:local
 
-# Or step by step:
-bun run build              # Compile TypeScript
-bun run package:mac        # Build & sign macOS app
-bun run dist:manifest      # Generate latest-mac.yml manifests
+# Install to Applications
+hdiutil attach release/kcode-*.dmg
+cp -R /Volumes/kcode*/kcode.app /Applications/
+hdiutil detach /Volumes/kcode*
 ```
 
-### Bump Version Before Release
+### CI/CD Builds (GitHub Actions)
+
+GitHub Actions builds **Windows and Linux** automatically. macOS is built locally due to code signing requirements.
 
 ```bash
+# Trigger CI build manually
+gh workflow run build.yml
+
+# Or push a tag for full release
+git tag v0.0.28 && git push origin v0.0.28
+```
+
+### Full Release (All Platforms)
+
+```bash
+# Bump version first
 npm version patch --no-git-tag-version  # 0.0.27 → 0.0.28
+
+# Full release with upload to CDN (macOS both archs)
+bun run release
 ```
 
 ### Files Uploaded to CDN
