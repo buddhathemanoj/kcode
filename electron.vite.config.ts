@@ -1,8 +1,14 @@
 import { defineConfig, externalizeDepsPlugin } from "electron-vite"
+import { loadEnv } from "vite"
 import { resolve } from "path"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "tailwindcss"
 import autoprefixer from "autoprefixer"
+
+// Load .env files before accessing process.env
+// This ensures .env.local is loaded for dev mode
+const env = loadEnv("", process.cwd(), "MAIN_VITE_")
+Object.assign(process.env, env)
 
 // Log Foundry env vars status at build time (for debugging CI builds)
 console.log("\n[Build] Foundry credentials status:")

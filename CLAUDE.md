@@ -107,23 +107,116 @@ const projectChats = db.select().from(chats).where(eq(chats.projectId, id)).all(
 - Message streaming via tRPC subscription (`claude.onMessage`)
 - Uses Azure Claude API credentials stored locally
 
-## Authentication
+## Authentication (Microsoft Foundry)
 
-kcode uses Azure Claude API credentials instead of OAuth:
+kcode uses **Microsoft Azure AI Foundry** for Claude API access. This is the recommended approach for production builds.
 
-```typescript
-// AzureConfig interface (auth-store.ts)
-interface AzureConfig {
-  endpoint: string     // https://your-resource.openai.azure.com
-  apiKey: string       // Azure API key
-  deploymentName: string // Claude deployment name
-}
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Credential Flow                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  .env.local                electron.vite.config.ts                   │
+│  ┌──────────────┐          ┌─────────────────────┐                  │
+│  │ MAIN_VITE_*  │ ──────▶  │ loadEnv() loads    │                   │
+│  │ credentials  │          │ vars into process  │                   │
+│  └──────────────┘          │ .env at build time │                   │
+│                            └─────────┬───────────┘                  │
+│                                      │                               │
+│                                      ▼                               │
+│                            ┌─────────────────────┐                  │
+│                            │ define: {} inlines  │                   │
+│                            │ vars into bundle    │                   │
+│                            └─────────┬───────────┘                  │
+│                                      │                               │
+│                                      ▼                               │
+│                            ┌─────────────────────┐                  │
+│                            │ import.meta.env.*   │                   │
+│                            │ available at runtime│                   │
+│                            └─────────┬───────────┘                  │
+│                                      │                               │
+│                                      ▼                               │
+│                            ┌─────────────────────┐                  │
+│                            │ getFoundryConfig()  │                   │
+│                            │ reads credentials   │                   │
+│                            └─────────┬───────────┘                  │
+│                                      │                               │
+│                                      ▼                               │
+│                            ┌─────────────────────┐                  │
+│                            │ Claude SDK uses     │                   │
+│                            │ Foundry natively    │                   │
+│                            └─────────────────────┘                  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-Credentials are:
-- Stored encrypted using Electron's `safeStorage` API
-- Managed via `AuthManager` class in `auth-manager.ts`
-- Configured through settings UI in the renderer
+### Configuration
+
+**1. Create `.env.local` in project root:**
+
+```bash
+# Microsoft Foundry Claude Configuration (required)
+MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY=1
+MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE=your-resource-name
+MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY=your-api-key
+MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-5
+```
+
+**2. Get credentials from Azure AI Foundry:**
+- Go to [Azure AI Foundry](https://ai.azure.com/)
+- Create or select a project with Claude models deployed
+- Get the resource name and API key from the deployment
+
+**3. Run dev mode:**
+
+```bash
+bun run dev
+```
+
+You should see in the logs:
+```
+[Build] Foundry credentials status:
+  MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY: SET
+  MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE: SET
+  MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY: SET (hidden)
+  MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-5
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `.env.local` | Local credentials (git-ignored) |
+| `electron.vite.config.ts` | Loads env vars via `loadEnv()` and inlines them via `define` |
+| `src/main/lib/trpc/routers/claude.ts` | `getFoundryConfig()` reads credentials at runtime |
+
+### Troubleshooting
+
+**"Foundry credentials status: NOT SET"**
+- Ensure `.env.local` exists in project root
+- Check that variable names have `MAIN_VITE_` prefix
+- Restart `bun run dev` after changing `.env.local`
+
+**"API Error: api_not_supported"**
+- The Azure resource doesn't have Claude models deployed
+- Check Azure AI Foundry portal for correct resource name
+- Verify the API key is valid
+
+**Using localStorage config instead of Foundry**
+- If Foundry env vars are set, they take precedence over localStorage
+- Clear localStorage config: DevTools → Application → Local Storage → delete `agents:claude-custom-config`
+
+### CI/CD Builds
+
+For GitHub Actions, set these secrets:
+- `MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY`
+- `MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE`
+- `MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY`
+- `MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL`
+
+The credentials get baked into the build via the `define` block in `electron.vite.config.ts`.
 
 ## Tech Stack
 

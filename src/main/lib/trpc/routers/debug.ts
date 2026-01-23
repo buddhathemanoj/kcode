@@ -111,6 +111,20 @@ export const debugRouter = router({
   }),
 
   /**
+   * Check if Azure Foundry is configured via environment variables
+   * Used to auto-skip onboarding when credentials are pre-configured
+   */
+  isFoundryConfigured: publicProcedure.query(() => {
+    const authManager = getAuthManager()
+    const isConfigured = authManager.isAuthenticated()
+    const config = authManager.getConfig()
+    return {
+      configured: isConfigured,
+      model: config?.model || null,
+    }
+  }),
+
+  /**
    * Get offline simulation status
    */
   getOfflineSimulation: publicProcedure.query(() => {
@@ -129,4 +143,15 @@ export const debugRouter = router({
       console.log(`[Debug] Offline simulation ${input.enabled ? "enabled" : "disabled"}`)
       return { success: true, enabled: simulateOfflineMode }
     }),
+
+  /**
+   * Clear custom Claude config from renderer localStorage
+   * This resets API credentials and forces re-configuration
+   */
+  clearClaudeConfig: publicProcedure.mutation(() => {
+    console.log("[Debug] Requesting renderer to clear Claude config")
+    // The actual clearing happens in the renderer via IPC
+    // This just signals that it should be done
+    return { success: true, message: "Clear agents:claude-custom-config from localStorage in DevTools" }
+  }),
 })

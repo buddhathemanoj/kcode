@@ -90,6 +90,8 @@ import {
   compactingSubChatsAtom,
   diffSidebarOpenAtomFamily,
   diffViewDisplayModeAtom,
+  artifactSidebarOpenAtomFamily,
+  agentsArtifactSidebarWidthAtom,
   filteredDiffFilesAtom,
   filteredSubChatIdAtom,
   isCreatingPrAtom,
@@ -159,6 +161,7 @@ import {
   type ParsedDiffFile,
 } from "../ui/agent-diff-view"
 import { AgentPreview } from "../ui/agent-preview"
+import { ArtifactSidebar } from "../ui/artifact-sidebar"
 import { AgentQueueIndicator } from "../ui/agent-queue-indicator"
 import { AgentToolCall } from "../ui/agent-tool-call"
 import { AgentToolRegistry } from "../ui/agent-tool-registry"
@@ -3879,6 +3882,12 @@ export function ChatView({
     [chatId],
   )
   const [isDiffSidebarOpen, setIsDiffSidebarOpen] = useAtom(diffSidebarAtom)
+  // Per-chat artifact sidebar state
+  const artifactSidebarAtom = useMemo(
+    () => artifactSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const [isArtifactSidebarOpen, setIsArtifactSidebarOpen] = useAtom(artifactSidebarAtom)
   const [isTerminalSidebarOpen, setIsTerminalSidebarOpen] = useAtom(
     terminalSidebarOpenAtom,
   )
@@ -3920,6 +3929,22 @@ export function ChatView({
   const [diffDisplayMode, setDiffDisplayMode] = useAtom(diffViewDisplayModeAtom)
   const subChatsSidebarMode = useAtomValue(agentsSubChatsSidebarModeAtom)
 
+  // Artifact sidebar state - tracks plan content from active sub-chat
+  const [artifactContent, setArtifactContent] = useState<string | null>(null)
+  const [isArtifactStreaming, setIsArtifactStreaming] = useState(false)
+  const artifactAutoOpenedRef = useRef(false) // Track if we've auto-opened for current streaming session
+
+  // Keyboard shortcut: Cmd+Shift+A to toggle artifact sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "a" && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        setIsArtifactSidebarOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [setIsArtifactSidebarOpen])
 
   // Force narrow width when switching to side-peek mode (from dialog/fullscreen)
   useEffect(() => {
@@ -4062,6 +4087,58 @@ export function ChatView({
     messages?: any
     stream_id?: string | null
   }>
+
+  // Extract artifact content from active sub-chat messages
+  const currentActiveSubChatId = useAgentSubChatStore.getState().activeSubChatId
+  const currentActiveSubChat = agentSubChats.find((sc) => sc.id === currentActiveSubChatId)
+  const currentSubChatMessages = (currentActiveSubChat?.messages as any[]) || []
+
+  // Effect to extract plan content from messages and handle auto-open
+  useEffect(() => {
+    let content: string | null = null
+    let isStreaming = false
+
+    // Search messages in reverse to find most recent plan content
+    for (let i = currentSubChatMessages.length - 1; i >= 0; i--) {
+      const msg = currentSubChatMessages[i]
+      if (msg.role !== "assistant" || !msg.parts) continue
+
+      for (const part of msg.parts) {
+        // Check for ExitPlanMode output (completed plan)
+        if (part.type === "tool-ExitPlanMode" && part.output?.plan) {
+          content = part.output.plan
+          isStreaming = part.state === "input-streaming"
+          break
+        }
+        // Check for PlanWrite tool (structured plan)
+        if (part.type === "tool-PlanWrite") {
+          // PlanWrite might have content in different places
+          if (part.input?.content) {
+            content = part.input.content
+          } else if (part.output?.content) {
+            content = part.output.content
+          }
+          isStreaming = part.state === "input-streaming"
+          break
+        }
+      }
+      if (content) break
+    }
+
+    setArtifactContent(content)
+    setIsArtifactStreaming(isStreaming)
+
+    // Auto-open sidebar when streaming starts (only once per session)
+    if (isStreaming && content && !artifactAutoOpenedRef.current && !isArtifactSidebarOpen) {
+      setIsArtifactSidebarOpen(true)
+      artifactAutoOpenedRef.current = true
+    }
+
+    // Reset auto-open flag when streaming ends
+    if (!isStreaming) {
+      artifactAutoOpenedRef.current = false
+    }
+  }, [currentSubChatMessages, isArtifactSidebarOpen, setIsArtifactSidebarOpen])
 
   // Workspace isolation: limit mounted tabs to prevent memory growth
   // CRITICAL: Filter by workspace to prevent rendering sub-chats from other workspaces
@@ -5485,6 +5562,9 @@ Make sure to preserve all functionality from both branches when resolving confli
                         canOpenDiff={canOpenDiff}
                         isDiffSidebarOpen={isDiffSidebarOpen}
                         diffStats={diffStats}
+                        onOpenArtifact={() => setIsArtifactSidebarOpen(true)}
+                        canOpenArtifact={!!artifactContent}
+                        isArtifactStreaming={isArtifactStreaming}
                       />
                     </>
                   )}
@@ -5763,6 +5843,29 @@ Make sure to preserve all functionality from both branches when resolving confli
               setDiffStats={setDiffStats}
             />
           </DiffStateProvider>
+        )}
+
+        {/* Artifact Sidebar - shows plan/MDX content with live streaming */}
+        {!isMobileFullscreen && (
+          <ResizableSidebar
+            isOpen={isArtifactSidebarOpen}
+            onClose={() => setIsArtifactSidebarOpen(false)}
+            widthAtom={agentsArtifactSidebarWidthAtom}
+            minWidth={300}
+            side="right"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-background border-l"
+            style={{ borderLeftWidth: "0.5px", overflow: "hidden" }}
+          >
+            <ArtifactSidebar
+              content={artifactContent}
+              isStreaming={isArtifactStreaming}
+              onClose={() => setIsArtifactSidebarOpen(false)}
+            />
+          </ResizableSidebar>
         )}
 
         {/* Preview Sidebar - hidden on mobile fullscreen and when preview is not available */}
