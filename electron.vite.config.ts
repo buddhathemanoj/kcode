@@ -4,6 +4,13 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "tailwindcss"
 import autoprefixer from "autoprefixer"
 
+// Log Foundry env vars status at build time (for debugging CI builds)
+console.log("\n[Build] Foundry credentials status:")
+console.log(`  MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY: ${process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY ? "SET" : "NOT SET"}`)
+console.log(`  MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE: ${process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE ? "SET" : "NOT SET"}`)
+console.log(`  MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY: ${process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY ? "SET (hidden)" : "NOT SET"}`)
+console.log(`  MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL: ${process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || "NOT SET"}\n`)
+
 export default defineConfig({
   main: {
     plugins: [
@@ -12,6 +19,21 @@ export default defineConfig({
         exclude: ["superjson", "trpc-electron", "gray-matter"],
       }),
     ],
+    define: {
+      // Inline Foundry credentials at build time (for CI builds with baked-in auth)
+      "import.meta.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY": JSON.stringify(
+        process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY || ""
+      ),
+      "import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE": JSON.stringify(
+        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE || ""
+      ),
+      "import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY": JSON.stringify(
+        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY || ""
+      ),
+      "import.meta.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL": JSON.stringify(
+        process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || ""
+      ),
+    },
     build: {
       lib: {
         entry: resolve(__dirname, "src/main/index.ts"),
