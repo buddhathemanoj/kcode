@@ -8,6 +8,24 @@ import { publicProcedure, router } from "../index"
  */
 export const claudeCodeRouter = router({
   /**
+   * Start authentication flow
+   * For Azure config, this returns info to show the config dialog
+   */
+  startAuth: publicProcedure.mutation(() => {
+    const authManager = getAuthManager()
+    const isConfigured = authManager.isAuthenticated()
+
+    return {
+      success: true,
+      requiresConfig: !isConfigured,
+      authType: "azure" as const,
+      message: isConfigured
+        ? "Azure credentials already configured"
+        : "Please configure Azure credentials in Settings",
+    }
+  }),
+
+  /**
    * Check if Azure credentials are configured
    */
   getIntegration: publicProcedure.query(() => {

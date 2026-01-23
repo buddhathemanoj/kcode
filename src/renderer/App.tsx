@@ -7,9 +7,7 @@ import { TRPCProvider } from "./contexts/TRPCProvider"
 import { selectedProjectAtom } from "./features/agents/atoms"
 import { AgentsLayout } from "./features/layout/agents-layout"
 import {
-  AnthropicOnboardingPage,
-  ApiKeyOnboardingPage,
-  BillingMethodPage,
+  AzureOnboardingPage,
   SelectRepoPage,
 } from "./features/onboarding"
 import { identify, initAnalytics, shutdown } from "./lib/analytics"
@@ -45,8 +43,31 @@ function AppContent() {
   const anthropicOnboardingCompleted = useAtomValue(
     anthropicOnboardingCompletedAtom
   )
+  const setAnthropicOnboardingCompleted = useSetAtom(anthropicOnboardingCompletedAtom)
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
+  const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
+
+  // Check if Azure Foundry is configured via environment variables
+  const { data: foundryConfig, isLoading: isLoadingFoundry } = trpc.debug.isFoundryConfigured.useQuery()
+
+  // Auto-skip onboarding when Foundry is configured
+  useEffect(() => {
+    if (foundryConfig?.configured) {
+      console.log("[App] Foundry configured, auto-completing onboarding")
+      // Set billing method to api-key (Foundry uses API key style auth)
+      if (!billingMethod) {
+        setBillingMethod("api-key")
+      }
+      // Mark onboarding as completed
+      if (!apiKeyOnboardingCompleted) {
+        setApiKeyOnboardingCompleted(true)
+      }
+      if (!anthropicOnboardingCompleted) {
+        setAnthropicOnboardingCompleted(true)
+      }
+    }
+  }, [foundryConfig?.configured, billingMethod, apiKeyOnboardingCompleted, anthropicOnboardingCompleted, setBillingMethod, setApiKeyOnboardingCompleted, setAnthropicOnboardingCompleted])
 
   // Migration: If user already completed Anthropic onboarding but has no billing method set,
   // automatically set it to "claude-subscription" (legacy users before billing method was added)
@@ -71,25 +92,22 @@ function AppContent() {
     return exists ? selectedProject : null
   }, [selectedProject, projects, isLoadingProjects])
 
-  // Determine which page to show:
-  // 1. No billing method selected -> BillingMethodPage
-  // 2. Claude subscription selected but not completed -> AnthropicOnboardingPage
-  // 3. API key or custom model selected but not completed -> ApiKeyOnboardingPage
-  // 4. No valid project selected -> SelectRepoPage
-  // 5. Otherwise -> AgentsLayout
-  if (!billingMethod) {
-    return <BillingMethodPage />
+  // Show loading while checking Foundry config
+  if (isLoadingFoundry) {
+    return null // Or a loading spinner
   }
 
-  if (billingMethod === "claude-subscription" && !anthropicOnboardingCompleted) {
-    return <AnthropicOnboardingPage />
+  // If Foundry is configured, skip all billing/onboarding checks
+  if (foundryConfig?.configured) {
+    if (!validatedProject && !isLoadingProjects) {
+      return <SelectRepoPage />
+    }
+    return <AgentsLayout />
   }
 
-  if (
-    (billingMethod === "api-key" || billingMethod === "custom-model") &&
-    !apiKeyOnboardingCompleted
-  ) {
-    return <ApiKeyOnboardingPage />
+  // kCode uses Azure credentials - show Azure onboarding if not configured
+  if (!apiKeyOnboardingCompleted) {
+    return <AzureOnboardingPage />
   }
 
   if (!validatedProject && !isLoadingProjects) {

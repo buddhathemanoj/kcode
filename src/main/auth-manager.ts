@@ -1,46 +1,83 @@
 /**
- * Simplified Auth Manager for Microsoft Foundry Claude credentials
- * Reads configuration from environment variables (via import.meta.env for electron-vite)
- * See: https://code.claude.com/docs/en/microsoft-foundry
+ * Auth Manager for kCode
+ *
+ * Supports two modes:
+ * 1. Environment variables (for development/CI) - MAIN_VITE_* vars
+ * 2. Stored credentials (for end users) - via AuthStore with encrypted storage
  */
+import { app } from "electron"
+import { AuthStore, type AzureConfig } from "./auth-store"
+
+let authStore: AuthStore | null = null
+
+function getAuthStore(): AuthStore {
+  if (!authStore) {
+    authStore = new AuthStore(app.getPath("userData"))
+  }
+  return authStore
+}
+
 export class AuthManager {
   constructor(_isDev: boolean = false) {
-    // No-op - we use environment variables now
+    // No-op - initialization handled lazily
   }
 
   /**
-   * Check if Foundry credentials are configured via environment variables
+   * Check if credentials are configured (either env vars or stored)
    */
   isAuthenticated(): boolean {
-    // In electron-vite, MAIN_VITE_ prefixed vars are available via import.meta.env
+    // First check environment variables (for dev/CI)
     const useFoundry = import.meta.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY
     const resource = import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE
     const apiKey = import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY
 
-    console.log("[AuthManager] isAuthenticated() check:")
-    console.log("[AuthManager]   MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY:", useFoundry || "(not set)")
-    console.log("[AuthManager]   MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE:", resource || "(not set)")
-    console.log("[AuthManager]   MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY:", apiKey ? `${apiKey.slice(0, 8)}...` : "(not set)")
+    if (useFoundry && resource && apiKey) {
+      console.log("[AuthManager] Using Foundry env vars")
+      return true
+    }
 
-    const result = !!(useFoundry && resource && apiKey)
-    console.log("[AuthManager]   Result:", result ? "✓ Authenticated (Foundry)" : "✗ Not authenticated")
-    return result
+    // Then check stored Azure credentials
+    const store = getAuthStore()
+    const isConfigured = store.isConfigured()
+    console.log("[AuthManager] Stored credentials:", isConfigured ? "configured" : "not configured")
+    return isConfigured
   }
 
   /**
-   * Get Foundry configuration from environment variables
+   * Get configuration from env vars or stored credentials
    */
-  getConfig(): { resource: string; apiKey: string; model: string } | null {
+  getConfig(): { resource?: string; apiKey: string; model?: string; endpoint?: string; deploymentName?: string } | null {
+    // First check environment variables
     const useFoundry = import.meta.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY
     const resource = import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE
     const apiKey = import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY
     const model = import.meta.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL
 
-    if (!useFoundry || !resource || !apiKey) {
-      return null
+    if (useFoundry && resource && apiKey) {
+      return { resource, apiKey, model: model || "claude-opus-4-5" }
     }
 
-    return { resource, apiKey, model: model || "claude-opus-4-5" }
+    // Then check stored Azure credentials
+    const store = getAuthStore()
+    const config = store.getConfig()
+    if (config) {
+      return {
+        endpoint: config.endpoint,
+        apiKey: config.apiKey,
+        deploymentName: config.deploymentName,
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Save Azure configuration to secure storage
+   */
+  saveConfig(config: AzureConfig): void {
+    const store = getAuthStore()
+    store.save(config)
+    console.log("[AuthManager] Azure config saved to secure storage")
   }
 
   /**
@@ -51,30 +88,29 @@ export class AuthManager {
   }
 
   /**
-   * Logout - no-op since we use env vars
+   * Logout - clear stored credentials
    */
   logout(): void {
-    console.log("[Auth] Logout called but using env vars - no action needed")
+    const store = getAuthStore()
+    store.clear()
+    console.log("[AuthManager] Credentials cleared")
   }
 
-  // Legacy methods for compatibility - these are no-ops now
+  // Legacy methods for compatibility
   setOnTokenRefresh(_callback: (authData: any) => void): void {
     // No-op
   }
 
   startAuthFlow(_mainWindow: any): void {
-    console.log("[Auth] startAuthFlow called but using env vars - configure in .env.local")
+    console.log("[Auth] startAuthFlow called - open settings to configure Azure credentials")
   }
 
   async getValidToken(): Promise<string | null> {
-    return import.meta.env.MAIN_VITE_AZURE_API_KEY || null
+    const config = this.getConfig()
+    return config?.apiKey || null
   }
 
   async updateUser(_updates: { name?: string }): Promise<null> {
     return null
-  }
-
-  saveConfig(_config: any): void {
-    console.log("[Auth] saveConfig called but using env vars - configure in .env.local")
   }
 }
