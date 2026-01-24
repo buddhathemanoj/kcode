@@ -33,6 +33,7 @@ const AuthDialog = () => null
 // Desktop: archive is handled inline, not via hook
 // import { DiscordIcon } from "@/components/icons"
 import { DiscordIcon } from "../../icons"
+import { useClerkAuth } from "../../lib/hooks/use-clerk-auth"
 import { AgentsRenameSubChatDialog } from "../agents/components/agents-rename-subchat-dialog"
 import { ConfirmArchiveDialog } from "../../components/confirm-archive-dialog"
 import { trpc } from "../../lib/trpc"
@@ -791,7 +792,7 @@ const ChatListSection = React.memo(function ChatListSection({
 interface AgentsSidebarProps {
   userId?: string | null | undefined
   clerkUser?: any
-  desktopUser?: { id: string; email: string; name?: string } | null
+  desktopUser?: { id: string; email: string; name?: string; imageUrl?: string | null } | null
   onSignOut?: () => void
   onToggleSidebar?: () => void
   isMobileFullscreen?: boolean
@@ -864,7 +865,7 @@ interface SidebarHeaderProps {
   isFullscreen: boolean | null
   isMobileFullscreen: boolean
   userId: string | null | undefined
-  desktopUser: { id: string; email: string; name?: string } | null
+  desktopUser: { id: string; email: string; name?: string; imageUrl?: string | null } | null
   onSignOut: () => void
   onToggleSidebar?: () => void
   setSettingsDialogOpen: (open: boolean) => void
@@ -894,6 +895,12 @@ const SidebarHeader = memo(function SidebarHeader({
 }: SidebarHeaderProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { user: clerkUser } = useClerkAuth()
+
+  // Use clerk user image first, then fall back to desktop user image
+  const profileImageUrl = clerkUser?.imageUrl || desktopUser?.imageUrl || null
+  const profileName = clerkUser?.name || desktopUser?.name || "User"
+  const profileEmail = clerkUser?.email || desktopUser?.email
 
   return (
     <div
@@ -979,7 +986,7 @@ const SidebarHeader = memo(function SidebarHeader({
                     </div>
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="text-sm font-medium text-foreground truncate">
-                        KCode
+                        Anchor
                       </div>
                     </div>
                     {showOfflineFeatures && (
@@ -1011,14 +1018,22 @@ const SidebarHeader = memo(function SidebarHeader({
                       <div className="relative pl-2 pt-1.5 pb-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="w-8 h-8 rounded flex items-center justify-center bg-background flex-shrink-0 overflow-hidden">
-                            <Logo className="w-4 h-4" />
+                            {profileImageUrl ? (
+                              <img
+                                src={profileImageUrl}
+                                alt={profileName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Logo className="w-4 h-4" />
+                            )}
                           </div>
                           <div className="flex-1 min-w-0 overflow-hidden">
                             <div className="font-medium text-sm text-foreground truncate">
-                              {desktopUser?.name || "User"}
+                              {profileName}
                             </div>
                             <div className="text-xs text-muted-foreground truncate">
-                              {desktopUser?.email}
+                              {profileEmail}
                             </div>
                           </div>
                         </div>
