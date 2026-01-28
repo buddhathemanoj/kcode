@@ -4,6 +4,7 @@ import { chatsRouter } from "./chats"
 import { claudeRouter } from "./claude"
 import { claudeCodeRouter } from "./claude-code"
 import { clerkAuthRouter } from "./clerk-auth"
+import { composioRouter } from "./composio"
 import { ollamaRouter } from "./ollama"
 import { terminalRouter } from "./terminal"
 import { externalRouter } from "./external"
@@ -26,6 +27,7 @@ export function createAppRouter(getWindow: () => BrowserWindow | null) {
     claude: claudeRouter,
     claudeCode: claudeCodeRouter,
     clerkAuth: clerkAuthRouter,
+    composio: composioRouter,
     ollama: ollamaRouter,
     terminal: terminalRouter,
     external: externalRouter,

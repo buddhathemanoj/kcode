@@ -12,6 +12,7 @@ import {
   SettingsIcon,
 } from "../../icons"
 import { SkillIconFilled, CustomAgentIconFilled, OriginalMCPIcon, BrainFilledIcon, FlaskFilledIcon, BugFilledIcon } from "../ui/icons"
+import { Plug } from "lucide-react"
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
@@ -20,6 +21,7 @@ import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
 import { AgentsCustomAgentsTab } from "./settings-tabs/agents-custom-agents-tab"
 import { AgentsModelsTab } from "./settings-tabs/agents-models-tab"
 import { AgentsMcpTab } from "./settings-tabs/agents-mcp-tab"
+import { AgentsConnectorsTab } from "./settings-tabs/agents-connectors-tab"
 import { AgentsBetaTab } from "./settings-tabs/agents-beta-tab"
 import { AgentsProjectWorktreeTab } from "./settings-tabs/agents-project-worktree-tab"
 import { trpc } from "../../lib/trpc"
@@ -91,6 +93,12 @@ const ADVANCED_TABS = [
     label: "MCP Servers",
     icon: OriginalMCPIcon,
     description: "Model Context Protocol servers",
+  },
+  {
+    id: "connectors" as SettingsTab,
+    label: "Connectors",
+    icon: Plug,
+    description: "App integrations (Gmail, Slack, etc.)",
   },
   {
     id: "beta" as SettingsTab,
@@ -287,6 +295,8 @@ export function AgentsSettingsDialog({
         return <AgentsCustomAgentsTab />
       case "mcp":
         return <AgentsMcpTab />
+      case "connectors":
+        return <AgentsConnectorsTab />
       case "beta":
         return <AgentsBetaTab />
       case "debug":

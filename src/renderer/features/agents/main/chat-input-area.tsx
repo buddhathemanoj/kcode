@@ -57,6 +57,7 @@ import {
   agentsSettingsDialogOpenAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
+import { ConnectorsDropdown } from "../ui/connectors-dropdown"
 
 // Hook to get available models (including offline model if Ollama is available and debug enabled)
 function useAvailableModels() {
@@ -1033,6 +1034,9 @@ export const ChatInputArea = memo(function ChatInputArea({
                       })}
                     </DropdownMenuContent>
                   </DropdownMenu>
+
+                  {/* Connectors dropdown */}
+                  <ConnectorsDropdown />
                 </div>
 
                 <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">

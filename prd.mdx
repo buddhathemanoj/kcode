@@ -1,0 +1,1013 @@
+# Building Agentic Applications with Claude SDK and Azure Foundry
+
+## Product Requirements Document
+
+---
+
+## Executive Summary
+
+This document outlines the architecture, patterns, and implementation details for building agentic AI applications using the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) with **Azure Foundry** (Microsoft's hosted Claude infrastructure). The reference implementation is **kcode**, a local-first Electron desktop app for AI-powered code assistance.
+
+---
+
+## 1. System Architecture Overview
+
+### 1.1 High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Interface                           │
+│  (React/Electron Renderer)                                      │
+├─────────────────────────────────────────────────────────────────┤
+│                    State Management Layer                        │
+│  Jotai (UI State) │ Zustand (Persistent) │ React Query (Server) │
+├─────────────────────────────────────────────────────────────────┤
+│                      IPC Communication                           │
+│  tRPC over Electron IPC │ superjson serialization                │
+├─────────────────────────────────────────────────────────────────┤
+│                    Backend Orchestration                         │
+│  (Node.js / Electron Main Process)                               │
+├─────────────────────────────────────────────────────────────────┤
+│  Claude SDK Integration │ Database (SQLite) │ Tool Execution     │
+├─────────────────────────────────────────────────────────────────┤
+│                    Azure Foundry / Claude API                    │
+│  Microsoft-hosted Claude infrastructure                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 Core Components
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Frontend** | React 19, TypeScript | User interface, message rendering |
+| **State** | Jotai, Zustand, React Query | UI state, persistence, server state |
+| **Communication** | tRPC, Electron IPC | Type-safe RPC between processes |
+| **Backend** | Node.js, Electron Main | Orchestration, SDK integration |
+| **Database** | SQLite, Drizzle ORM | Session persistence, message history |
+| **AI Engine** | Claude Agent SDK | Agentic capabilities, tool execution |
+| **Infrastructure** | Azure Foundry | Claude model hosting |
+
+---
+
+## 2. Azure Foundry Integration
+
+### 2.1 Configuration
+
+Azure Foundry credentials are configured via environment variables:
+
+```typescript
+// Required environment variables (MAIN_VITE_* prefix for electron-vite)
+interface FoundryConfig {
+  CLAUDE_CODE_USE_FOUNDRY: "1"           // Enable Foundry mode
+  ANTHROPIC_FOUNDRY_RESOURCE: string     // Azure resource URL
+  ANTHROPIC_FOUNDRY_API_KEY: string      // API key
+  ANTHROPIC_DEFAULT_OPUS_MODEL: string   // Model name (e.g., "claude-opus-4-5")
+}
+```
+
+### 2.2 Token Limits
+
+Azure Foundry has specific constraints:
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Max Thinking Tokens | 16,000 | Extended thinking budget |
+| Max Output Tokens | 48,000 | Response generation budget |
+| Total Token Budget | 64,000 | Combined limit |
+
+### 2.3 Authentication Flow
+
+```typescript
+// Auth Manager Pattern (simplified from auth-manager.ts)
+class AuthManager {
+  private foundryConfig: FoundryConfig | null = null
+
+  getFoundryConfig(): FoundryConfig | null {
+    return {
+      useFoundry: process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY === "1",
+      resource: process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE,
+      apiKey: process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY,
+      model: process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL,
+    }
+  }
+
+  buildEnvForSDK(): Record<string, string> {
+    const config = this.getFoundryConfig()
+    if (!config?.useFoundry) return {}
+
+    return {
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+      ANTHROPIC_FOUNDRY_RESOURCE: config.resource,
+      ANTHROPIC_FOUNDRY_API_KEY: config.apiKey,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: config.model,
+    }
+  }
+}
+```
+
+---
+
+## 3. Claude SDK Integration
+
+### 3.1 SDK Initialization
+
+```typescript
+import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk"
+
+async function initializeAgent(options: AgentOptions) {
+  const stream = await claudeQuery({
+    prompt: options.prompt,
+    options: {
+      cwd: options.workingDirectory,
+      systemPrompt: "claude_code", // Built-in preset
+      env: buildClaudeEnv(options.customEnv),
+      permissionMode: options.mode, // "plan" | "bypassPermissions"
+      model: options.model,
+      maxThinkingTokens: 16000,  // Azure Foundry limit
+      maxOutputTokens: 48000,    // Azure Foundry limit
+      mcpServers: options.mcpServers,
+      agents: options.registeredAgents,
+      canUseTool: options.toolApprovalCallback,
+      resume: options.sessionId,  // For session continuity
+    }
+  })
+
+  return stream
+}
+```
+
+### 3.2 Message Streaming Architecture
+
+The SDK returns an async iterable that emits structured messages:
+
+```typescript
+interface UIMessageChunk {
+  type:
+    | "text-delta"           // Incremental text
+    | "tool-input-available" // Tool call started
+    | "tool-output-available"// Tool call completed
+    | "reasoning"            // Extended thinking
+    | "ask-user-question"    // Requires user input
+    | "error"                // Error occurred
+    | "finish"               // Stream completed
+
+  content?: string
+  toolName?: string
+  toolInput?: Record<string, unknown>
+  toolOutput?: unknown
+  error?: { code: string; message: string }
+}
+```
+
+### 3.3 Stream Processing Pattern
+
+```typescript
+async function* processStream(
+  sdkStream: AsyncIterable<SDKMessage>
+): AsyncGenerator<UIMessageChunk> {
+  for await (const message of sdkStream) {
+    // Transform SDK messages to UI chunks
+    switch (message.type) {
+      case "assistant":
+        for (const block of message.content) {
+          if (block.type === "text") {
+            yield { type: "text-delta", content: block.text }
+          } else if (block.type === "tool_use") {
+            yield {
+              type: "tool-input-available",
+              toolName: block.name,
+              toolInput: block.input
+            }
+          }
+        }
+        break
+
+      case "result":
+        if (message.subtype === "success") {
+          yield { type: "tool-output-available", toolOutput: message.result }
+        } else {
+          yield { type: "error", error: message.error }
+        }
+        break
+
+      case "system":
+        // Handle initialization, MCP server status, etc.
+        break
+    }
+  }
+
+  yield { type: "finish" }
+}
+```
+
+---
+
+## 4. Permission Modes
+
+### 4.1 Plan Mode (Read-Only)
+
+For brainstorming and code review without execution:
+
+```typescript
+const PLAN_MODE_BLOCKED_TOOLS = [
+  "Bash",           // No shell commands
+  "NotebookEdit",   // No notebook modifications
+]
+
+// Only allow file writes to markdown
+function isPlanModeWriteAllowed(filePath: string): boolean {
+  return filePath.endsWith(".md")
+}
+```
+
+### 4.2 Agent Mode (Full Execution)
+
+For building and executing code:
+
+```typescript
+const agentOptions = {
+  permissionMode: "bypassPermissions",
+  canUseTool: async (toolName: string, input: unknown) => {
+    // All tools allowed, but can still require approval for sensitive ops
+    if (isSensitiveOperation(toolName, input)) {
+      return await requestUserApproval(toolName, input)
+    }
+    return true
+  }
+}
+```
+
+---
+
+## 5. Tool Execution Framework
+
+### 5.1 Tool Approval Flow
+
+```
+User sends prompt
+       ↓
+SDK processes and decides to use tool
+       ↓
+canUseTool() callback invoked
+       ↓
+┌──────────────────────────────┐
+│ Is tool sensitive?          │
+│  - File write outside CWD   │
+│  - System command           │
+│  - Network request          │
+└──────────────────────────────┘
+       ↓ Yes              ↓ No
+Emit ask-user-question    Auto-approve
+       ↓
+User approves/denies
+       ↓
+Tool executes (or skips)
+       ↓
+Result streamed back
+```
+
+### 5.2 Implementation
+
+```typescript
+// Tool approval with timeout
+const pendingApprovals = new Map<string, {
+  resolve: (approved: boolean) => void
+  timeout: NodeJS.Timeout
+}>()
+
+async function canUseTool(
+  toolName: string,
+  input: Record<string, unknown>
+): Promise<boolean> {
+  const approvalId = generateId()
+
+  // Emit question to UI
+  emit({
+    type: "ask-user-question",
+    approvalId,
+    toolName,
+    toolInput: input
+  })
+
+  // Wait for user response (60s timeout)
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingApprovals.delete(approvalId)
+      resolve(false) // Deny on timeout
+    }, 60000)
+
+    pendingApprovals.set(approvalId, { resolve, timeout })
+  })
+}
+
+// Handle user response
+function handleToolApproval(approvalId: string, approved: boolean) {
+  const pending = pendingApprovals.get(approvalId)
+  if (pending) {
+    clearTimeout(pending.timeout)
+    pending.resolve(approved)
+    pendingApprovals.delete(approvalId)
+  }
+}
+```
+
+---
+
+## 6. Session Management
+
+### 6.1 Session Persistence
+
+Each conversation maintains continuity through session IDs:
+
+```typescript
+// Database schema for sessions
+const subChats = sqliteTable("sub_chats", {
+  id: text("id").primaryKey(),
+  chatId: text("chat_id").references(() => chats.id),
+  sessionId: text("session_id"),      // SDK session for resume
+  streamId: text("stream_id"),        // Track active streams
+  mode: text("mode"),                 // "plan" | "agent"
+  messages: text("messages"),         // JSON array of conversation
+  createdAt: integer("created_at"),
+  updatedAt: integer("updated_at"),
+})
+```
+
+### 6.2 Session Resume
+
+```typescript
+async function resumeSession(subChatId: string) {
+  const subChat = await db.select().from(subChats)
+    .where(eq(subChats.id, subChatId))
+    .get()
+
+  if (!subChat?.sessionId) {
+    throw new Error("No session to resume")
+  }
+
+  const stream = await claudeQuery({
+    prompt: "", // Empty prompt for pure resume
+    options: {
+      resume: subChat.sessionId,
+      continue: true,
+      // ... other options
+    }
+  })
+
+  return stream
+}
+```
+
+### 6.3 Session Rollback
+
+For undoing messages and retrying:
+
+```typescript
+async function rollbackToMessage(subChatId: string, messageUuid: string) {
+  const stream = await claudeQuery({
+    prompt: newPrompt,
+    options: {
+      resumeSessionAt: messageUuid, // Resume at specific point
+      // ... other options
+    }
+  })
+
+  return stream
+}
+```
+
+---
+
+## 7. MCP Server Integration
+
+### 7.1 MCP Server Caching
+
+MCP servers can take 60+ seconds to initialize. Caching is critical:
+
+```typescript
+interface MCPServerStatus {
+  name: string
+  status: "connected" | "failed" | "pending" | "needs-auth"
+  lastChecked: number
+}
+
+// Two-tier cache
+const memoryCache = new Map<string, Map<string, MCPServerStatus>>()
+const diskCachePath = path.join(userData, "cache/mcp-status.json")
+const TTL = 5 * 60 * 1000 // 5 minutes
+
+async function getMCPServers(projectPath: string): Promise<MCPServerConfig[]> {
+  // 1. Check memory cache
+  const cached = memoryCache.get(projectPath)
+  if (cached && !isExpired(cached)) {
+    return filterWorkingServers(cached)
+  }
+
+  // 2. Check disk cache
+  const diskCached = await loadDiskCache(projectPath)
+  if (diskCached && !isExpired(diskCached)) {
+    memoryCache.set(projectPath, diskCached)
+    return filterWorkingServers(diskCached)
+  }
+
+  // 3. Initialize servers (slow path)
+  const statuses = await initializeMCPServers(projectPath)
+  await saveToBothCaches(projectPath, statuses)
+  return filterWorkingServers(statuses)
+}
+
+function filterWorkingServers(
+  statuses: Map<string, MCPServerStatus>
+): MCPServerConfig[] {
+  return Array.from(statuses.entries())
+    .filter(([_, status]) => status.status === "connected")
+    .map(([name, _]) => getMCPServerConfig(name))
+}
+```
+
+### 7.2 Warmup on App Start
+
+```typescript
+async function warmupMcpCache() {
+  // Get recently used projects
+  const recentProjects = await db.select().from(projects)
+    .orderBy(desc(projects.updatedAt))
+    .limit(5)
+
+  // Pre-warm caches in parallel
+  await Promise.all(
+    recentProjects.map(p => getMCPServers(p.path))
+  )
+}
+
+// Call on app ready
+app.whenReady().then(warmupMcpCache)
+```
+
+---
+
+## 8. Error Handling
+
+### 8.1 Error Categories
+
+```typescript
+enum ErrorCode {
+  // Authentication
+  AUTH_FAILED_SDK = "AUTH_FAILED_SDK",
+  AUTH_EXPIRED = "AUTH_EXPIRED",
+
+  // Execution
+  PROCESS_CRASH = "PROCESS_CRASH",
+  EXECUTABLE_NOT_FOUND = "EXECUTABLE_NOT_FOUND",
+  TIMEOUT = "TIMEOUT",
+
+  // Network
+  NETWORK_ERROR = "NETWORK_ERROR",
+  RATE_LIMIT = "RATE_LIMIT",
+
+  // User
+  USER_ABORTED = "USER_ABORTED",
+
+  // Generic
+  UNKNOWN = "UNKNOWN",
+}
+```
+
+### 8.2 Error Recovery Patterns
+
+```typescript
+async function executeWithRetry<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries: number; backoff: number }
+): Promise<T> {
+  let lastError: Error
+
+  for (let i = 0; i < options.maxRetries; i++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error
+
+      if (isRateLimitError(error)) {
+        await sleep(options.backoff * Math.pow(2, i))
+        continue
+      }
+
+      if (isNetworkError(error)) {
+        // Check for offline fallback
+        const offlineResult = await tryOfflineFallback()
+        if (offlineResult) return offlineResult
+      }
+
+      throw error // Non-retryable
+    }
+  }
+
+  throw lastError
+}
+```
+
+### 8.3 Offline Fallback (Ollama)
+
+```typescript
+async function checkOfflineFallback(): Promise<Config | null> {
+  // 1. Check internet connectivity
+  const isOnline = await checkInternetConnection()
+  if (isOnline) return null
+
+  // 2. Check Ollama availability
+  const ollamaStatus = await checkOllamaStatus()
+  if (!ollamaStatus.available) return null
+
+  // 3. Find suitable model
+  const codingModel = ollamaStatus.models.find(m =>
+    m.includes("codellama") ||
+    m.includes("deepseek") ||
+    m.includes("qwen")
+  )
+
+  if (!codingModel) return null
+
+  return {
+    baseUrl: "http://localhost:11434",
+    model: codingModel,
+    isOffline: true,
+  }
+}
+```
+
+---
+
+## 9. Frontend Integration
+
+### 9.1 tRPC Setup
+
+```typescript
+// Renderer: lib/trpc.ts
+import { createTRPCReact } from "@trpc/react-query"
+import { ipcLink } from "trpc-electron/renderer"
+import superjson from "superjson"
+import type { AppRouter } from "../../main/lib/trpc"
+
+export const trpc = createTRPCReact<AppRouter>()
+
+export const trpcClient = trpc.createClient({
+  links: [ipcLink({ serializer: superjson })],
+})
+```
+
+### 9.2 Chat Subscription Hook
+
+```typescript
+function useAgentChat(subChatId: string) {
+  const [messages, setMessages] = useState<UIMessage[]>([])
+  const [isStreaming, setIsStreaming] = useState(false)
+
+  const mutation = trpc.claude.chat.useMutation()
+
+  const sendMessage = useCallback(async (prompt: string) => {
+    setIsStreaming(true)
+
+    // Add user message
+    setMessages(prev => [...prev, { role: "user", content: prompt }])
+
+    // Start streaming
+    const subscription = trpc.claude.chat.subscribe({
+      subChatId,
+      prompt,
+      mode: currentMode,
+    }, {
+      onData(chunk) {
+        switch (chunk.type) {
+          case "text-delta":
+            setMessages(prev => appendToLastMessage(prev, chunk.content))
+            break
+          case "tool-input-available":
+            setMessages(prev => addToolCall(prev, chunk))
+            break
+          case "ask-user-question":
+            showApprovalDialog(chunk)
+            break
+          case "finish":
+            setIsStreaming(false)
+            break
+        }
+      },
+      onError(error) {
+        setIsStreaming(false)
+        showErrorToast(error)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [subChatId, currentMode])
+
+  return { messages, isStreaming, sendMessage }
+}
+```
+
+### 9.3 State Management Patterns
+
+```typescript
+// Jotai for UI state
+const selectedSubChatIdAtom = atom<string | null>(null)
+const isPlanModeAtom = atom(false)
+const isStreamingAtom = atom(false)
+
+// Zustand for persistent state
+const useSubChatStore = create(
+  persist(
+    (set, get) => ({
+      pinnedSubChats: [] as string[],
+      tabOrder: [] as string[],
+
+      pinSubChat: (id: string) => set(state => ({
+        pinnedSubChats: [...state.pinnedSubChats, id]
+      })),
+
+      reorderTabs: (newOrder: string[]) => set({ tabOrder: newOrder }),
+    }),
+    { name: "sub-chat-store" }
+  )
+)
+
+// React Query for server state
+function useSubChatMessages(subChatId: string) {
+  return trpc.chats.getSubChat.useQuery(
+    { id: subChatId },
+    {
+      select: (data) => data?.messages ?? [],
+      staleTime: Infinity, // Messages don't change server-side
+    }
+  )
+}
+```
+
+---
+
+## 10. Database Schema
+
+### 10.1 Drizzle ORM Schema
+
+```typescript
+// src/main/lib/db/schema/index.ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  path: text("path").notNull().unique(),
+  gitRemoteUrl: text("git_remote_url"),
+  gitProvider: text("git_provider"),
+  gitOwner: text("git_owner"),
+  gitRepo: text("git_repo"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+export const chats = sqliteTable("chats", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  projectId: text("project_id").references(() => projects.id),
+  worktreePath: text("worktree_path"),
+  branch: text("branch"),
+  baseBranch: text("base_branch"),
+  prUrl: text("pr_url"),
+  prNumber: integer("pr_number"),
+  archivedAt: integer("archived_at"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+export const subChats = sqliteTable("sub_chats", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  chatId: text("chat_id").references(() => chats.id),
+  sessionId: text("session_id"),
+  streamId: text("stream_id"),
+  mode: text("mode").notNull(), // "plan" | "agent"
+  messages: text("messages").notNull().default("[]"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+```
+
+### 10.2 Message Persistence
+
+```typescript
+interface PersistedMessage {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  toolCalls?: {
+    name: string
+    input: Record<string, unknown>
+    output?: unknown
+    status: "pending" | "completed" | "error"
+  }[]
+  metadata?: {
+    sdkMessageUuid?: string  // For rollback
+    model?: string
+    tokens?: number
+  }
+  timestamp: number
+}
+
+async function persistMessages(
+  subChatId: string,
+  messages: PersistedMessage[]
+) {
+  await db.update(subChats)
+    .set({
+      messages: JSON.stringify(messages),
+      updatedAt: Date.now(),
+    })
+    .where(eq(subChats.id, subChatId))
+}
+```
+
+---
+
+## 11. Security Considerations
+
+### 11.1 Credential Storage
+
+```typescript
+// Use Electron's safeStorage for sensitive data
+import { safeStorage } from "electron"
+
+class SecureStore {
+  private encryptionAvailable = safeStorage.isEncryptionAvailable()
+
+  set(key: string, value: string): void {
+    if (this.encryptionAvailable) {
+      const encrypted = safeStorage.encryptString(value)
+      fs.writeFileSync(this.getPath(key), encrypted)
+    } else {
+      // Fallback: plaintext (warn user)
+      fs.writeFileSync(this.getPath(key), value)
+    }
+  }
+
+  get(key: string): string | null {
+    const path = this.getPath(key)
+    if (!fs.existsSync(path)) return null
+
+    const data = fs.readFileSync(path)
+    if (this.encryptionAvailable) {
+      return safeStorage.decryptString(data)
+    }
+    return data.toString()
+  }
+}
+```
+
+### 11.2 Tool Execution Sandboxing
+
+```typescript
+// Validate tool inputs to prevent injection
+function validateToolInput(toolName: string, input: unknown): boolean {
+  switch (toolName) {
+    case "Bash":
+      return !containsDangerousCommands(input.command)
+    case "Write":
+      return isWithinProjectDirectory(input.filePath)
+    case "WebFetch":
+      return isAllowedDomain(input.url)
+    default:
+      return true
+  }
+}
+
+function containsDangerousCommands(command: string): boolean {
+  const dangerous = [
+    /rm\s+-rf\s+[\/~]/,
+    /sudo\s+/,
+    /chmod\s+777/,
+    />\s*\/dev\/sd/,
+  ]
+  return dangerous.some(pattern => pattern.test(command))
+}
+```
+
+### 11.3 Context Isolation
+
+```typescript
+// Electron preload with context isolation
+const { contextBridge, ipcRenderer } = require("electron")
+
+contextBridge.exposeInMainWorld("desktopApi", {
+  // Only expose specific, safe methods
+  minimize: () => ipcRenderer.invoke("window:minimize"),
+  close: () => ipcRenderer.invoke("window:close"),
+
+  // No direct access to ipcRenderer
+  // No access to Node.js APIs
+  // No file system access from renderer
+})
+```
+
+---
+
+## 12. Performance Optimization
+
+### 12.1 Lazy Loading
+
+```typescript
+// Dynamic import for heavy dependencies
+let claudeModule: typeof import("@anthropic-ai/claude-agent-sdk") | null = null
+
+async function getClaudeSDK() {
+  if (!claudeModule) {
+    claudeModule = await import("@anthropic-ai/claude-agent-sdk")
+  }
+  return claudeModule
+}
+```
+
+### 12.2 Stream Efficiency
+
+```typescript
+function createSafeEmitter(emit: (chunk: UIMessageChunk) => void) {
+  let isActive = true
+
+  return {
+    emit: (chunk: UIMessageChunk) => {
+      if (isActive) emit(chunk)
+    },
+    complete: () => {
+      if (isActive) {
+        isActive = false
+        emit({ type: "finish" })
+      }
+    },
+    abort: () => {
+      isActive = false
+    },
+    isActive: () => isActive,
+  }
+}
+```
+
+### 12.3 Batch Database Writes
+
+```typescript
+// Accumulate messages, write periodically
+class MessageBuffer {
+  private buffer: PersistedMessage[] = []
+  private flushTimeout: NodeJS.Timeout | null = null
+
+  add(message: PersistedMessage) {
+    this.buffer.push(message)
+    this.scheduleFlush()
+  }
+
+  private scheduleFlush() {
+    if (this.flushTimeout) return
+
+    this.flushTimeout = setTimeout(() => {
+      this.flush()
+      this.flushTimeout = null
+    }, 500) // Batch writes every 500ms
+  }
+
+  async flush() {
+    if (this.buffer.length === 0) return
+
+    const messages = [...this.buffer]
+    this.buffer = []
+    await persistMessages(this.subChatId, messages)
+  }
+}
+```
+
+---
+
+## 13. Testing Strategy
+
+### 13.1 Unit Tests
+
+```typescript
+// Test tool approval flow
+describe("Tool Approval", () => {
+  it("should approve safe tools automatically", async () => {
+    const approved = await canUseTool("Read", { filePath: "/project/src/index.ts" })
+    expect(approved).toBe(true)
+  })
+
+  it("should require approval for dangerous tools", async () => {
+    const approvalPromise = canUseTool("Bash", { command: "rm -rf /" })
+
+    // Simulate user denial
+    handleToolApproval(lastApprovalId, false)
+
+    const approved = await approvalPromise
+    expect(approved).toBe(false)
+  })
+})
+```
+
+### 13.2 Integration Tests
+
+```typescript
+describe("Claude Integration", () => {
+  it("should stream responses from Azure Foundry", async () => {
+    const chunks: UIMessageChunk[] = []
+
+    const stream = await initializeAgent({
+      prompt: "Say hello",
+      workingDirectory: "/tmp/test",
+      mode: "plan",
+    })
+
+    for await (const chunk of processStream(stream)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.some(c => c.type === "text-delta")).toBe(true)
+    expect(chunks[chunks.length - 1].type).toBe("finish")
+  })
+})
+```
+
+---
+
+## 14. Deployment Checklist
+
+### 14.1 Environment Variables
+
+```bash
+# Required for Azure Foundry
+MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY=1
+MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE=https://your-resource.openai.azure.com
+MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY=your-api-key
+MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-5
+
+# Optional
+MAIN_VITE_SENTRY_DSN=your-sentry-dsn  # Error tracking
+```
+
+### 14.2 Build Commands
+
+```bash
+# Development
+bun run dev
+
+# Production build
+bun run build
+bun run package:mac    # macOS (DMG + ZIP)
+bun run package:win    # Windows (NSIS + portable)
+bun run package:linux  # Linux (AppImage + DEB)
+
+# Release
+npm version patch --no-git-tag-version
+bun run release
+```
+
+### 14.3 Pre-Release Verification
+
+- [ ] Azure Foundry credentials configured and tested
+- [ ] MCP server cache warming works
+- [ ] Session resume/rollback functional
+- [ ] Offline fallback (Ollama) tested
+- [ ] Auto-update manifest generated
+- [ ] Code signing configured (macOS/Windows)
+
+---
+
+## 15. Roadmap
+
+### Phase 1: Core Agent (Current)
+- [x] Azure Foundry integration
+- [x] Session management (resume/rollback)
+- [x] Tool execution with approval flow
+- [x] MCP server caching
+
+### Phase 2: Enhanced Isolation
+- [ ] Git worktree per chat
+- [ ] Containerized tool execution
+- [ ] Per-project MCP server configs
+
+### Phase 3: Collaboration
+- [ ] Shared sessions
+- [ ] Team workspaces
+- [ ] Audit logging
+
+### Phase 4: Enterprise
+- [ ] SSO integration
+- [ ] Policy enforcement
+- [ ] Usage analytics
+
+---
+
+## Appendix: Key File References
+
+| File | Purpose |
+|------|---------|
+| `src/main/index.ts` | App lifecycle, auth init |
+| `src/main/auth-manager.ts` | Foundry credential management |
+| `src/main/lib/trpc/routers/claude.ts` | Core SDK integration |
+| `src/main/lib/db/schema/index.ts` | Database schema |
+| `src/preload/index.ts` | IPC bridge |
+| `src/renderer/lib/trpc.ts` | tRPC client |
+| `src/renderer/features/agents/main/active-chat.tsx` | Main chat UI |

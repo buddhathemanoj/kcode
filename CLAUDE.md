@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is this?
 
-**kcode** - A local-first Electron desktop app for AI-powered code assistance. Users create chat sessions linked to local project folders, interact with Claude in Plan or Agent mode, and see real-time tool execution (bash, file edits, web search, etc.).
+**Anchor** (formerly kcode) - A local-first Electron desktop app for AI-powered code assistance. Users create chat sessions linked to local project folders, interact with Claude in Plan or Agent mode, and see real-time tool execution (bash, file edits, web search, etc.). Includes 800+ app connectors via Composio integration (GitHub, Gmail, Slack, etc.).
 
 ## Commands
 
@@ -223,6 +223,181 @@ For GitHub Actions, set these secrets:
 
 The credentials get baked into the build via the `define` block in `electron.vite.config.ts`.
 
+## Connectors (Composio Integration)
+
+Anchor integrates with **Composio** to provide 800+ app connectors (GitHub, Gmail, Slack, Notion, etc.) that Claude can use as MCP tools during agent sessions.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Composio Connector Flow                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Settings → Connectors Tab                                           │
+│  ┌──────────────────────┐                                           │
+│  │ Browse 800+ apps     │                                           │
+│  │ (GitHub, Gmail, etc) │                                           │
+│  └──────────┬───────────┘                                           │
+│             │ Click "Connect"                                        │
+│             ▼                                                        │
+│  ┌──────────────────────┐                                           │
+│  │ Get/Create AuthConfig│  ← Composio v3 API                        │
+│  │ (OAuth2/API Key)     │                                           │
+│  └──────────┬───────────┘                                           │
+│             │                                                        │
+│             ▼                                                        │
+│  ┌──────────────────────┐                                           │
+│  │ Create Connection    │  → Opens OAuth popup                      │
+│  │ Link with callback   │                                           │
+│  └──────────┬───────────┘                                           │
+│             │ anchor-dev://composio-callback                         │
+│             ▼                                                        │
+│  ┌──────────────────────┐                                           │
+│  │ Sync to local DB     │  → composio_connections table             │
+│  │ (status, metadata)   │                                           │
+│  └──────────┬───────────┘                                           │
+│             │                                                        │
+│             ▼                                                        │
+│  ┌──────────────────────┐                                           │
+│  │ Claude SDK uses      │  → MCP server with Composio tools         │
+│  │ connected tools      │                                           │
+│  └──────────────────────┘                                           │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+**1. Add Composio API key to `.env.local`:**
+
+```bash
+# Composio Configuration (optional - enables connectors)
+MAIN_VITE_COMPOSIO_API_KEY=your-composio-api-key
+```
+
+**2. Get API key from Composio:**
+- Go to [Composio Dashboard](https://app.composio.dev/)
+- Navigate to Settings → API Keys
+- Copy your API key
+
+**3. Run dev mode:**
+
+```bash
+bun run dev
+```
+
+You should see in the logs:
+```
+[Build] Foundry credentials status:
+  ...
+  MAIN_VITE_COMPOSIO_API_KEY: SET (hidden)
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/main/composio-service.ts` | Core Composio API client (v3 API) |
+| `src/main/lib/trpc/routers/composio.ts` | tRPC router for connector operations |
+| `src/main/lib/db/schema/index.ts` | `composio_connections` table schema |
+| `src/renderer/components/dialogs/settings-tabs/agents-connectors-tab.tsx` | UI for browsing/connecting apps |
+| `src/renderer/features/agents/ui/connectors-dropdown.tsx` | Dropdown to toggle connectors in chat |
+| `src/renderer/lib/atoms/composio.ts` | Jotai atoms for connector state |
+
+### Database Schema
+
+```typescript
+// composio_connections table
+composioConnections = sqliteTable("composio_connections", {
+  id: text("id").primaryKey().$defaultFn(() => generateId()),
+  clerkUserId: text("clerk_user_id").notNull(),
+  toolkitName: text("toolkit_name").notNull(),    // e.g., "github", "gmail"
+  displayName: text("display_name"),               // Human-readable name
+  status: text("status").notNull(),                // "connected" | "disconnected" | "pending" | "error"
+  enabled: integer("enabled", { mode: "boolean" }).default(true),
+  connectedAt: integer("connected_at", { mode: "timestamp" }),
+  metadata: text("metadata"),                      // JSON with connectionId, etc.
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+})
+```
+
+### Composio v3 API
+
+The integration uses Composio's v3 API which has a different structure from v1:
+
+```typescript
+// v3 API endpoints (backend.composio.dev/api/v3/)
+GET  /toolkits                    // List all available apps (863+)
+GET  /auth_configs?toolkit=name   // Get auth configs for a toolkit
+POST /auth_configs                // Create auth config (managed OAuth)
+POST /connected_accounts/link     // Generate OAuth connection link
+GET  /connected_accounts?user_ids[]=id  // Get user's connected accounts
+
+// v3 response structure for connected accounts
+{
+  "toolkit": { "slug": "github", "name": "GitHub" },  // Nested toolkit object
+  "status": "ACTIVE",
+  "id": "ca_xxxxx",
+  "user_id": "user_xxxxx"
+}
+```
+
+### OAuth Callback Flow
+
+1. User clicks "Connect" on a toolkit
+2. `authorizeToolkit()` creates connection link with callback URL
+3. OAuth popup opens → user authenticates
+4. Composio redirects to `anchor-dev://composio-callback?status=success&connected_account_id=...`
+5. Deep link handler in `src/main/index.ts` catches the callback
+6. UI calls `syncConnections` mutation to update local database
+7. Toolkit shows as "Connected" in the UI
+
+### tRPC Router Methods
+
+```typescript
+// src/main/lib/trpc/routers/composio.ts
+composio.isConfigured()           // Check if Composio API key is set
+composio.listToolkits()           // Get all 800+ available toolkits
+composio.getConnectionStatus(name) // Check if a toolkit is connected
+composio.authorize(name)          // Start OAuth flow for a toolkit
+composio.disconnect(name)         // Disconnect a toolkit
+composio.syncConnections()        // Sync all connections from Composio API
+composio.listConnections()        // Get local connection records
+composio.toggleConnection(name, enabled) // Enable/disable a connector
+composio.getMcpConfig()           // Get MCP config for Claude SDK
+```
+
+### Using Connectors in Chat
+
+When connectors are enabled:
+1. Claude SDK receives MCP tools from Composio via `getMcpConfig()`
+2. User can toggle specific connectors via the dropdown in chat input
+3. Enabled connectors' tools appear in Claude's available tools
+4. Claude can use tools like `GITHUB_CREATE_ISSUE`, `GMAIL_SEND_EMAIL`, etc.
+
+### Troubleshooting
+
+**"No auth config found for toolkit"**
+- The app auto-creates auth configs with `use_composio_managed_auth: true`
+- If still failing, check Composio dashboard for existing configs
+
+**OAuth callback not updating UI**
+- Check that protocol is registered: `[Protocol] Verification - isDefaultProtocolClient: true`
+- Verify callback URL format: `anchor-dev://composio-callback`
+- Check logs for: `[DeepLink] Composio OAuth callback detected`
+
+**Connections showing in Composio but not in app**
+- Run `syncConnections` mutation to refresh local database
+- Check logs for: `[Composio] Connected accounts found: X`
+- Verify toolkit slug is being read from `account.toolkit.slug`
+
+**Toolkit tools not appearing in Claude**
+- Ensure connector is enabled (toggle in dropdown)
+- Check `getMcpConfig()` is returning the toolkit
+- Verify Claude SDK is receiving MCP tools
+
 ## Tech Stack
 
 | Layer | Tech |
@@ -249,6 +424,8 @@ The credentials get baked into the build via the `define` block in `electron.vit
 - `src/main/lib/db/index.ts` - DB initialization + auto-migrate
 - `src/main/auth-manager.ts` - Azure credentials management
 - `src/main/auth-store.ts` - Encrypted credential storage
+- `src/main/composio-service.ts` - Composio API client for connectors
+- `src/main/lib/trpc/routers/composio.ts` - Composio tRPC router
 - `src/renderer/features/agents/atoms/index.ts` - Agent UI state atoms
 - `src/renderer/features/agents/main/active-chat.tsx` - Main chat component
 - `src/main/lib/trpc/routers/claude.ts` - Claude SDK integration
@@ -259,22 +436,22 @@ When testing behavior for new users, you need to simulate a fresh install:
 
 ```bash
 # 1. Clear all app data (config, database, settings)
-rm -rf ~/Library/Application\ Support/kcode\ Dev/
+rm -rf ~/Library/Application\ Support/anchor\ Dev/
 
 # 2. Reset macOS protocol handler registration (if testing deep links)
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -kill -r -domain local -domain system -domain user
 
 # 3. Clear app preferences
-defaults delete io.kosal.kcode.dev  # Dev mode
-defaults delete io.kosal.kcode      # Production
+defaults delete io.kosal.anchor.dev  # Dev mode
+defaults delete io.kosal.anchor      # Production
 
 # 4. Run in dev mode with clean state
 bun run dev
 ```
 
 **Dev vs Production App:**
-- Dev mode uses `kcode-dev://` protocol
-- Dev mode uses separate userData path (`~/Library/Application Support/kcode Dev/`)
+- Dev mode uses `anchor-dev://` protocol
+- Dev mode uses separate userData path (`~/Library/Application Support/anchor Dev/`)
 - This prevents conflicts between dev and production installs
 
 ## Releasing a New Version
@@ -334,14 +511,18 @@ bun run release
 ## Current Status (WIP)
 
 **Done:**
-- Drizzle ORM setup with schema (projects, chats, sub_chats)
+- Drizzle ORM setup with schema (projects, chats, sub_chats, composio_connections)
 - Auto-migration on app startup
 - tRPC routers structure
 - Azure Claude credentials integration
+- Composio Connectors integration (800+ apps)
+- OAuth flow for app connections
+- Deep link protocol handling (anchor-dev://)
 
 **In Progress:**
 - Settings UI for Azure credentials configuration
 - Replacing `mock-api.ts` with real tRPC calls in renderer
+- MCP tools integration with Claude SDK
 
 **Planned:**
 - Git worktree per chat (isolation)

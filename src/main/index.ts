@@ -24,13 +24,13 @@ const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
 
 // Deep link protocol (must match package.json build.protocols.schemes)
 // Use different protocol in dev to avoid conflicts with production app
-const PROTOCOL = IS_DEV ? "kcode-dev" : "kcode"
+const PROTOCOL = IS_DEV ? "anchor-dev" : "anchor"
 
 // Set dev mode userData path BEFORE requestSingleInstanceLock()
 // This ensures dev and prod have separate instance locks
 if (IS_DEV) {
   const { join } = require("path")
-  const devUserData = join(app.getPath("userData"), "..", "kcode Dev")
+  const devUserData = join(app.getPath("userData"), "..", "anchor Dev")
   app.setPath("userData", devUserData)
   console.log("[Dev] Using separate userData path:", devUserData)
 }
@@ -77,17 +77,17 @@ export async function handleAuthCode(_code: string): Promise<void> {
   console.log("[Auth] Please configure Azure credentials in Settings")
 }
 
-// Handle deep link - supports Clerk auth callback
+// Handle deep link - supports Clerk auth callback and Composio OAuth callback
 function handleDeepLink(url: string): void {
   console.log("[DeepLink] Received:", url)
-  
+
   try {
     const parsedUrl = new URL(url)
-    
+
     // Handle Clerk auth callback: kcode://auth/callback?token=xxx&refresh=yyy
     if (parsedUrl.host === "auth" && parsedUrl.pathname === "/callback") {
       console.log("[DeepLink] Clerk auth callback detected")
-      
+
       // Import and use Clerk auth service
       import("./clerk-auth-service").then(({ getClerkAuthService }) => {
         const authService = getClerkAuthService()
@@ -108,6 +108,35 @@ function handleDeepLink(url: string): void {
           }
         })
       })
+      return
+    }
+
+    // Handle Composio OAuth callback: kcode://composio-callback?...
+    if (parsedUrl.host === "composio-callback") {
+      console.log("[DeepLink] Composio OAuth callback detected")
+      console.log("[DeepLink] Full URL:", url)
+      console.log("[DeepLink] All params:", Object.fromEntries(parsedUrl.searchParams.entries()))
+
+      // Composio may send various param names, try common ones
+      const status = parsedUrl.searchParams.get("status") ||
+        parsedUrl.searchParams.get("connectionStatus") ||
+        (parsedUrl.searchParams.get("error") ? "error" : "success")
+
+      const toolkitName = parsedUrl.searchParams.get("toolkit") ||
+        parsedUrl.searchParams.get("integration") ||
+        parsedUrl.searchParams.get("app") ||
+        parsedUrl.searchParams.get("toolkitSlug") ||
+        parsedUrl.searchParams.get("toolkit_slug")
+
+      const window = getWindow()
+      if (window) {
+        console.log("[DeepLink] Composio callback - toolkit:", toolkitName, "status:", status)
+        window.webContents.send("composio:auth-complete", {
+          toolkitName,
+          status: status || "success",
+        })
+      }
+      return
     }
   } catch (error) {
     console.error("[DeepLink] Failed to parse URL:", error)

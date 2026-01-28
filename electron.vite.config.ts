@@ -15,7 +15,8 @@ console.log("\n[Build] Foundry credentials status:")
 console.log(`  MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY: ${process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY ? "SET" : "NOT SET"}`)
 console.log(`  MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE: ${process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE ? "SET" : "NOT SET"}`)
 console.log(`  MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY: ${process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY ? "SET (hidden)" : "NOT SET"}`)
-console.log(`  MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL: ${process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || "NOT SET"}\n`)
+console.log(`  MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL: ${process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || "NOT SET"}`)
+console.log(`  MAIN_VITE_COMPOSIO_API_KEY: ${process.env.MAIN_VITE_COMPOSIO_API_KEY ? "SET (hidden)" : "NOT SET"}\n`)
 
 export default defineConfig({
   main: {
@@ -38,6 +39,10 @@ export default defineConfig({
       ),
       "import.meta.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL": JSON.stringify(
         process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || ""
+      ),
+      // Composio API key for connectors feature
+      "import.meta.env.MAIN_VITE_COMPOSIO_API_KEY": JSON.stringify(
+        process.env.MAIN_VITE_COMPOSIO_API_KEY || ""
       ),
     },
     build: {

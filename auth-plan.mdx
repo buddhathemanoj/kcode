@@ -1,0 +1,502 @@
+# Clerk Authentication + Usage-Based Pricing Plan
+
+## Overview
+
+Integrate Clerk authentication into kcode (Electron desktop app) with a separate Next.js web app that handles:
+1. **User authentication** via Clerk
+2. **Usage tracking** for all Claude API calls
+3. **Pricing/billing** based on token usage
+
+## Key Decisions
+
+| Decision | Choice |
+|----------|--------|
+| Auth Strategy | Clerk for user identity, Azure/Foundry credentials stay on server |
+| API Proxy | Desktop app calls Claude API through web app backend (for usage tracking) |
+| Token Lifetime | Long-lived (24 hour access token, 90 day refresh token) |
+| Multi-device | Single device only - new sign-in invalidates previous sessions |
+| Billing | Subscription tiers (Free/Pro/Enterprise) with monthly token limits |
+| Limit Behavior | Hard block when limit reached - must upgrade or wait for next period |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Next.js Web App (kcode-web)                      │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │  @clerk/nextjs   │  │  Claude API      │  │  Usage Tracking      │  │
+│  │  - Sign-in/up    │  │  Proxy           │  │  - Log requests      │  │
+│  │  - User mgmt     │  │  - /api/claude/* │  │  - Token counting    │  │
+│  │  - Desktop auth  │  │  - Azure creds   │  │  - Billing/pricing   │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────┘  │
+│                               │                        │               │
+│                               ▼                        ▼               │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  Database (Postgres/Planetscale)                                  │  │
+│  │  - users, usage_logs, subscriptions, pricing_tiers               │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+         │ HTTPS                    │ HTTPS                  │ kcode://
+         ▼ (browser sign-in)        ▼ (API proxy)            ▼ (deep link)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        kcode Electron App                               │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐ │
+│  │   ClerkAuthManager  │  │   API Client        │  │  Protocol       │ │
+│  │   - startAuth()     │  │   - sendMessage()   │  │  Handler        │ │
+│  │   - handleCallback()│  │   - streams via     │  │  kcode://auth/* │ │
+│  │   - getToken()      │  │     web app proxy   │  │                 │ │
+│  └─────────────────────┘  └─────────────────────┘  └─────────────────┘ │
+│             │                      │                                    │
+│             ▼ tRPC                 │                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐│
+│  │  Renderer: Chat UI, Auth UI, Usage Display                         ││
+│  └─────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| **Clerk Auth** | Web App | User identity, sign-in/sign-up |
+| **Azure/Foundry** | Web App Server | Claude API credentials (never exposed to desktop) |
+| **API Proxy** | Web App | Routes Claude calls, tracks usage |
+| **Usage DB** | Web App | Stores usage logs, billing data |
+| **Desktop App** | Electron | UI, sends requests through web app proxy |
+
+---
+
+## Authentication Flows
+
+### 1. Desktop Sign-In Flow
+
+```
+1. User clicks "Sign In" in kcode
+2. Electron opens system browser: https://yourapp.com/sign-in?redirect=desktop&state={random}
+3. User authenticates via Clerk on web app
+4. Web app calls /api/auth/desktop-callback to generate desktop token
+5. Web app redirects to: kcode://auth/callback?token={jwt}&refresh={refresh_token}
+6. Electron receives deep link, extracts tokens
+7. Tokens stored via safeStorage
+8. User is authenticated in kcode
+```
+
+### 2. Token Refresh Flow
+
+```
+1. On app start or before API call, check token expiry
+2. If expired (or within 30 min buffer), call refresh endpoint
+3. POST https://yourapp.com/api/auth/refresh with refresh_token
+4. Receive new access token + refresh token
+5. Update stored tokens
+```
+
+### 3. Claude API Call Flow (with Usage Tracking)
+
+```
+1. User sends message in kcode desktop app
+2. Desktop app sends request to web app: POST /api/claude/messages
+   - Header: Authorization: Bearer {user_access_token}
+   - Body: { messages, model, max_tokens, ... }
+3. Web app validates user token
+4. Web app checks user's usage limits/subscription tier
+5. Web app forwards request to Azure Claude API (with server credentials)
+6. Web app streams response back to desktop app
+7. Web app logs usage: { userId, inputTokens, outputTokens, model, timestamp }
+8. Desktop app displays streamed response to user
+```
+
+### 4. Usage & Billing Flow
+
+```
+1. Each API call logs: userId, inputTokens, outputTokens, model, cost
+2. Aggregated usage available via /api/usage endpoint
+3. User can view usage in desktop app or web dashboard
+4. Billing integration (Stripe) for subscriptions
+```
+
+---
+
+## Implementation Plan
+
+### Phase 1: Next.js Web App Setup
+
+**New repo: `kcode-web`**
+
+#### 1.1 Tech Stack
+- Next.js 14+ (App Router)
+- @clerk/nextjs (authentication)
+- Drizzle ORM + Postgres (or Planetscale)
+- Stripe (billing)
+
+#### 1.2 Database Schema
+
+```typescript
+// users - synced from Clerk webhooks
+users {
+  id: string (Clerk user ID)
+  email: string
+  name: string
+  imageUrl: string
+  subscriptionTier: enum('free', 'pro', 'enterprise')
+  stripeCustomerId: string?
+  createdAt: timestamp
+}
+
+// devices - for single-device enforcement
+devices {
+  id: string (UUID)
+  userId: string (FK)
+  deviceId: string (unique per installation)
+  refreshToken: string (hashed)
+  lastActiveAt: timestamp
+  createdAt: timestamp
+}
+
+// usage_logs - per-request logging
+usage_logs {
+  id: string
+  userId: string (FK)
+  model: string ('claude-3-opus', 'claude-3-sonnet', etc)
+  inputTokens: int
+  outputTokens: int
+  cost: decimal (calculated from token pricing)
+  createdAt: timestamp
+}
+
+// subscriptions - billing info
+subscriptions {
+  id: string
+  userId: string (FK)
+  stripeSubscriptionId: string
+  tier: enum('free', 'pro', 'enterprise')
+  status: enum('active', 'canceled', 'past_due')
+  currentPeriodStart: timestamp
+  currentPeriodEnd: timestamp
+}
+
+// pricing_tiers - configurable limits (seeded data)
+pricing_tiers {
+  id: string
+  name: string ('free', 'pro', 'enterprise')
+  monthlyTokenLimit: int        // null = unlimited
+  monthlyPrice: decimal         // 0 for free tier
+  features: json                // { models: ['sonnet'], maxContextLength: 100000 }
+}
+```
+
+#### 1.3 Pricing Tiers
+
+| Tier | Monthly Price | Token Limit | Models |
+|------|---------------|-------------|--------|
+| Free | $0 | 100K tokens | Sonnet only |
+| Pro | $20 | 2M tokens | All models |
+| Enterprise | $100 | Unlimited | All models + priority |
+
+#### 1.4 Clerk Configuration
+- Install `@clerk/nextjs`
+- Configure Clerk application in dashboard
+- Enable "Native API" for desktop app support
+- Add `kcode://auth/callback` to allowed redirect URLs
+- Set up Clerk webhooks for user sync
+
+#### 1.5 API Endpoints
+
+**Auth Endpoints:**
+- `POST /api/auth/desktop-callback` - Generate desktop tokens after Clerk sign-in
+- `POST /api/auth/refresh` - Refresh desktop tokens
+
+**Claude API Proxy:**
+- `POST /api/claude/messages` - Proxy for Claude messages API (with usage tracking)
+- `GET /api/claude/models` - List available models for user's tier
+
+**Usage & Billing:**
+- `GET /api/usage` - Get user's usage stats
+- `POST /api/billing/portal` - Stripe customer portal redirect
+- `POST /api/webhooks/stripe` - Handle Stripe subscription events
+- `POST /api/webhooks/clerk` - Handle Clerk user sync
+
+---
+
+### Phase 2: Electron Main Process
+
+#### 2.1 New Files
+
+| File | Purpose |
+|------|---------|
+| `src/main/clerk-auth-manager.ts` | Auth flow & token management |
+| `src/main/clerk-token-store.ts` | Encrypted token storage (safeStorage) |
+| `src/main/claude-api-client.ts` | Proxied API calls through web app |
+
+#### 2.2 ClerkAuthManager Interface
+
+```typescript
+export interface ClerkTokens {
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
+  deviceId: string
+  user: ClerkUser
+}
+
+export interface ClerkUser {
+  id: string
+  email: string
+  name?: string
+  imageUrl?: string
+  subscriptionTier: 'free' | 'pro' | 'enterprise'
+}
+
+export class ClerkAuthManager {
+  startAuth(): void              // Opens browser for sign-in
+  handleCallback(url: string): Promise<ClerkTokens>
+  getToken(): Promise<string | null>  // Auto-refresh if needed
+  getUser(): ClerkUser | null
+  isAuthenticated(): boolean
+  logout(): void
+  getDeviceId(): string
+}
+```
+
+#### 2.3 Claude API Client (Proxied)
+
+```typescript
+export class ClaudeApiClient {
+  sendMessage(params): AsyncGenerator<StreamEvent>  // Through web app proxy
+  getModels(): Promise<Model[]>
+  getUsage(): Promise<UsageStats>
+  getBillingPortalUrl(): Promise<string>
+}
+```
+
+#### 2.4 Update Deep Link Handler
+
+```typescript
+// src/main/index.ts
+function handleDeepLink(url: string): void {
+  const parsed = new URL(url)
+  if (parsed.pathname === '/auth/callback') {
+    getClerkAuthManager().handleCallback(url)
+    getWindow()?.webContents.send('clerk:auth-success')
+  }
+}
+```
+
+#### 2.5 Remove Azure/Foundry from Desktop
+- Remove `MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY` env vars
+- Remove direct Azure API calls
+- All Claude API calls go through `ClaudeApiClient` → web app proxy
+
+---
+
+### Phase 3: tRPC Routers
+
+#### 3.1 Auth Router (`src/main/lib/trpc/routers/auth.ts`)
+
+```typescript
+export const authRouter = router({
+  getAuthState: publicProcedure.query(() => ({
+    isAuthenticated: clerkAuthManager.isAuthenticated(),
+    user: clerkAuthManager.getUser(),
+  })),
+  startAuth: publicProcedure.mutation(() => {
+    clerkAuthManager.startAuth()
+    return { started: true }
+  }),
+  logout: publicProcedure.mutation(() => {
+    clerkAuthManager.logout()
+    return { success: true }
+  }),
+})
+```
+
+#### 3.2 Usage Router (`src/main/lib/trpc/routers/usage.ts`)
+
+```typescript
+export const usageRouter = router({
+  getUsage: publicProcedure.query(async () => {
+    return claudeApiClient.getUsage()
+  }),
+  getModels: publicProcedure.query(async () => {
+    return claudeApiClient.getModels()
+  }),
+  openBillingPortal: publicProcedure.mutation(async () => {
+    const portalUrl = await claudeApiClient.getBillingPortalUrl()
+    shell.openExternal(portalUrl)
+  }),
+})
+```
+
+---
+
+### Phase 4: Renderer Integration
+
+#### 4.1 Hooks
+
+**`src/renderer/lib/hooks/use-auth.ts`**
+```typescript
+export function useAuth() {
+  return {
+    isAuthenticated,
+    user,
+    isLoading,
+    signIn: () => startAuthMutation.mutate(),
+    signOut: () => logoutMutation.mutate(),
+  }
+}
+```
+
+**`src/renderer/lib/hooks/use-usage.ts`**
+```typescript
+export function useUsage() {
+  return {
+    usage,      // { inputTokens, outputTokens, cost, limit }
+    models,
+    isLoading,
+    openBillingPortal,
+  }
+}
+```
+
+#### 4.2 UI Components
+
+| Component | Purpose |
+|-----------|---------|
+| `components/auth/login-button.tsx` | Sign in button |
+| `components/auth/user-menu.tsx` | User avatar, tier badge, dropdown |
+| `components/usage/usage-bar.tsx` | Progress bar (tokens used vs limit) |
+| `components/usage/usage-stats.tsx` | Detailed usage breakdown |
+| `components/usage/upgrade-prompt.tsx` | Shown at usage limit |
+
+---
+
+### Phase 5: Update Preload API
+
+```typescript
+// src/preload/index.ts
+contextBridge.exposeInMainWorld("desktopApi", {
+  // ... existing methods
+  onAuthSuccess: (callback) => {
+    ipcRenderer.on("clerk:auth-success", callback)
+    return () => ipcRenderer.removeListener("clerk:auth-success", callback)
+  },
+  onAuthError: (callback) => {
+    ipcRenderer.on("clerk:auth-error", callback)
+    return () => ipcRenderer.removeListener("clerk:auth-error", callback)
+  },
+})
+```
+
+---
+
+## Files to Create/Modify
+
+### Electron App (this repo)
+
+| File | Action |
+|------|--------|
+| `src/main/clerk-auth-manager.ts` | **NEW** |
+| `src/main/clerk-token-store.ts` | **NEW** |
+| `src/main/claude-api-client.ts` | **NEW** |
+| `src/main/index.ts` | **MODIFY** - deep link handler |
+| `src/main/lib/trpc/routers/auth.ts` | **NEW** |
+| `src/main/lib/trpc/routers/usage.ts` | **NEW** |
+| `src/main/lib/trpc/routers/index.ts` | **MODIFY** - add routers |
+| `src/main/lib/trpc/routers/claude.ts` | **MODIFY** - use proxied client |
+| `src/preload/index.ts` | **MODIFY** - auth events |
+| `src/renderer/lib/hooks/use-auth.ts` | **NEW** |
+| `src/renderer/lib/hooks/use-usage.ts` | **NEW** |
+| `src/renderer/components/auth/*` | **NEW** |
+| `src/renderer/components/usage/*` | **NEW** |
+
+### Next.js Web App (new repo: `kcode-web`)
+
+| File | Purpose |
+|------|---------|
+| `lib/db/schema.ts` | Database schema (Drizzle) |
+| `app/api/auth/desktop-callback/route.ts` | Generate desktop tokens |
+| `app/api/auth/refresh/route.ts` | Refresh tokens |
+| `app/api/claude/messages/route.ts` | Claude API proxy + usage logging |
+| `app/api/claude/models/route.ts` | Available models |
+| `app/api/usage/route.ts` | Usage stats endpoint |
+| `app/api/billing/portal/route.ts` | Stripe portal redirect |
+| `app/api/webhooks/clerk/route.ts` | Clerk user sync |
+| `app/api/webhooks/stripe/route.ts` | Stripe subscription events |
+| `app/(auth)/sign-in/[[...sign-in]]/page.tsx` | Sign-in page |
+| `middleware.ts` | Clerk middleware |
+
+---
+
+## Environment Variables
+
+### Electron App (`.env.local`)
+
+```env
+MAIN_VITE_WEB_APP_URL=https://yourapp.com
+```
+
+### Next.js Web App (`.env.local`)
+
+```env
+# Clerk
+CLERK_SECRET_KEY=sk_...
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_WEBHOOK_SECRET=whsec_...
+
+# Desktop token signing
+DESKTOP_TOKEN_SECRET=...
+
+# Azure Claude API (server-side only!)
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_DEPLOYMENT=claude-deployment-name
+
+# Database
+DATABASE_URL=postgresql://...
+
+# Stripe
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_...
+
+# Pricing (per million tokens)
+CLAUDE_OPUS_INPUT_PRICE=15.00
+CLAUDE_OPUS_OUTPUT_PRICE=75.00
+CLAUDE_SONNET_INPUT_PRICE=3.00
+CLAUDE_SONNET_OUTPUT_PRICE=15.00
+```
+
+---
+
+## Security Considerations
+
+1. **Token Storage**: Use Electron's `safeStorage` API (encrypted)
+2. **Token Rotation**: Rotate refresh tokens on each use
+3. **Expiry Buffer**: Refresh tokens 30 minutes before expiry
+4. **HTTPS Only**: All API calls over HTTPS
+5. **Deep Link Validation**: Validate token signature before storing
+6. **Single Device**: Server invalidates previous sessions on new sign-in
+7. **Server-side Credentials**: Azure API keys never exposed to desktop
+
+---
+
+## Verification Checklist
+
+### Authentication
+- [ ] Fresh install → Sign in via browser → Token received → Authenticated
+- [ ] Token refresh after 24 hours
+- [ ] Sign out → Tokens cleared → Requires re-auth
+- [ ] Sign in on another device → Previous device logged out
+
+### Usage & Billing
+- [ ] Send message → Usage logged → Stats update in UI
+- [ ] At usage limit → Hard block → Show upgrade prompt
+- [ ] Upgrade subscription → Limits increase
+- [ ] Stripe webhook → Subscription changes reflected
+
+### API Proxy
+- [ ] Message routed through web app → Response streamed back
+- [ ] Invalid/expired token → 401 → Prompt re-auth
+- [ ] Usage limit exceeded → 403 → Show upgrade prompt

@@ -15,7 +15,9 @@ import {
   checkOfflineFallback,
   type UIMessageChunk,
 } from "../../claude"
-import { chats, getDatabase, subChats } from "../../db"
+import { chats, getDatabase, subChats, composioEnabledToolkits } from "../../db"
+import { getComposioService } from "../../../composio-service"
+import { getClerkAuthService } from "../../../clerk-auth-service"
 import { createRollbackStash } from "../../git/stash"
 import { checkInternetConnection, checkOllamaStatus, getOllamaConfig } from "../../ollama"
 import { publicProcedure, router } from "../index"
@@ -975,6 +977,54 @@ export const claudeRouter = router({
               mcpServersFiltered = undefined
             }
 
+            // Integrate Composio MCP server (if user has enabled connectors)
+            // This merges Composio MCP with existing MCP servers from ~/.claude.json
+            if (!isUsingOllama) {
+              try {
+                const composioService = getComposioService()
+                if (composioService.isConfigured()) {
+                  const clerkAuth = getClerkAuthService()
+                  const user = await clerkAuth.getUser()
+
+                  if (user?.id) {
+                    // Get enabled toolkits for this user
+                    const enabledToolkits = db
+                      .select()
+                      .from(composioEnabledToolkits)
+                      .where(eq(composioEnabledToolkits.clerkUserId, user.id))
+                      .all()
+                      .filter(t => t.enabled)
+                      .map(t => t.toolkitName)
+
+                    if (enabledToolkits.length > 0) {
+                      const composioMcp = await composioService.getMcpConfig(enabledToolkits)
+
+                      if (composioMcp) {
+                        console.log(`[claude] Adding Composio MCP server with ${enabledToolkits.length} enabled toolkits:`, enabledToolkits)
+
+                        // Merge Composio MCP with existing MCP servers
+                        mcpServersFiltered = {
+                          ...(mcpServersFiltered || {}),
+                          composio: {
+                            type: "http",
+                            url: composioMcp.url,
+                            headers: composioMcp.headers,
+                          },
+                        }
+                      }
+                    } else {
+                      console.log('[claude] No Composio toolkits enabled - skipping Composio MCP')
+                    }
+                  } else {
+                    console.log('[claude] User not authenticated - skipping Composio MCP')
+                  }
+                }
+              } catch (composioError) {
+                console.error('[claude] Failed to get Composio MCP config:', composioError)
+                // Continue without Composio - don't fail the whole request
+              }
+            }
+
             // Log SDK configuration for debugging
             if (isUsingOllama) {
               console.log('[Ollama Debug] SDK Configuration:', {
@@ -1441,6 +1491,7 @@ export const claudeRouter = router({
                           p.type?.startsWith("tool-") &&
                           p.toolCallId === chunk.toolCallId,
                       )
+
                       if (toolPart) {
                         toolPart.result = chunk.output
                         toolPart.output = chunk.output // Backwards compatibility for the UI that relies on output field

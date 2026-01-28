@@ -24,6 +24,7 @@ import { AgentToolCall } from "../ui/agent-tool-call"
 import { AgentToolRegistry, getToolStatus } from "../ui/agent-tool-registry"
 import { AgentWebFetchTool } from "../ui/agent-web-fetch-tool"
 import { AgentWebSearchCollapsible } from "../ui/agent-web-search-collapsible"
+import { AgentConnectorTool } from "../ui/agent-connector-tool"
 import {
   CopyButton,
   PlayButton,
@@ -447,6 +448,20 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     }
 
     if (part.type?.startsWith("tool-")) {
+      // Check if this is a Composio connector tool
+      const isComposioTool = part.type.includes("mcp__composio__")
+
+      if (isComposioTool) {
+        return (
+          <AgentConnectorTool
+            key={idx}
+            part={part}
+            chatStatus={status}
+          />
+        )
+      }
+
+      // Fallback for other MCP tools
       return (
         <div key={idx} className="text-xs text-muted-foreground py-0.5 px-2">
           {part.type.replace("tool-", "")}

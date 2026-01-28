@@ -172,12 +172,16 @@ export type SettingsTab =
   | "skills"
   | "agents"
   | "mcp"
+  | "connectors"
   | "worktrees"
   | "debug"
   | "beta"
   | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
+
+// Alias for external tab setting (used by ConnectorsDropdown)
+export const agentsSettingsTabAtom = agentsSettingsDialogActiveTabAtom
 
 export type CustomClaudeConfig = {
   model: string

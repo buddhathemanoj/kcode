@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, unique } from "drizzle-orm/sqlite-core"
 import { relations } from "drizzle-orm"
 import { createId } from "../utils"
 
@@ -98,6 +98,54 @@ export const claudeCodeCredentials = sqliteTable("claude_code_credentials", {
   userId: text("user_id"), // Desktop auth user ID (for reference)
 })
 
+// ============ COMPOSIO CONNECTIONS ============
+// Track connected apps (per Clerk user)
+export const composioConnections = sqliteTable(
+  "composio_connections",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    clerkUserId: text("clerk_user_id").notNull(), // From Clerk auth
+    toolkitName: text("toolkit_name").notNull(), // "gmail", "slack", "github"
+    displayName: text("display_name").notNull(), // "Gmail", "Slack", "GitHub"
+    status: text("status").notNull().default("disconnected"), // "connected" | "disconnected" | "pending" | "error"
+    connectedAt: integer("connected_at", { mode: "timestamp" }),
+    metadata: text("metadata"), // JSON: { account_email, permissions, etc. }
+    createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+  },
+  (table) => ({
+    // Unique per user + toolkit
+    userToolkit: unique().on(table.clerkUserId, table.toolkitName),
+  }),
+)
+
+// ============ COMPOSIO ENABLED TOOLKITS ============
+// Track which toolkits are enabled for Claude sessions (per Clerk user)
+export const composioEnabledToolkits = sqliteTable(
+  "composio_enabled_toolkits",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    clerkUserId: text("clerk_user_id").notNull(), // From Clerk auth
+    toolkitName: text("toolkit_name").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+  },
+  (table) => ({
+    // Unique per user + toolkit
+    userToolkit: unique().on(table.clerkUserId, table.toolkitName),
+  }),
+)
+
 // ============ TYPE EXPORTS ============
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -107,3 +155,8 @@ export type SubChat = typeof subChats.$inferSelect
 export type NewSubChat = typeof subChats.$inferInsert
 export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
+export type ComposioConnection = typeof composioConnections.$inferSelect
+export type NewComposioConnection = typeof composioConnections.$inferInsert
+export type ComposioEnabledToolkit = typeof composioEnabledToolkits.$inferSelect
+export type NewComposioEnabledToolkit =
+  typeof composioEnabledToolkits.$inferInsert

@@ -174,6 +174,7 @@ interface SubChatSelectorProps {
   hasArtifactContent?: boolean
   isArtifactSidebarOpen?: boolean
   isArtifactStreaming?: boolean
+  hasUnapprovedPlan?: boolean
 }
 
 export function SubChatSelector({
@@ -191,6 +192,7 @@ export function SubChatSelector({
   hasArtifactContent = false,
   isArtifactSidebarOpen = false,
   isArtifactStreaming = false,
+  hasUnapprovedPlan = false,
 }: SubChatSelectorProps) {
   // Use shallow comparison to prevent re-renders when arrays have same content
   const { activeSubChatId, openSubChatIds, pinnedSubChatIds, allSubChats, parentChatId, togglePinSubChat } = useAgentSubChatStore(
@@ -915,12 +917,16 @@ export function SubChatSelector({
                 variant="ghost"
                 size="icon"
                 onClick={() => onOpenArtifact?.()}
-                className="h-6 w-6 p-0 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
+                className="h-6 w-6 p-0 relative transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md flex items-center justify-center hover:bg-foreground/10"
               >
                 {isArtifactStreaming ? (
                   <IconSpinner className="h-4 w-4" />
                 ) : (
                   <ArtifactIcon className="h-4 w-4" />
+                )}
+                {/* Amber dot for pending plan */}
+                {hasUnapprovedPlan && !isArtifactStreaming && (
+                  <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />
                 )}
                 <span className="sr-only">Open artifact</span>
               </Button>

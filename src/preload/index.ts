@@ -145,6 +145,13 @@ contextBridge.exposeInMainWorld("desktopApi", {
     return () => ipcRenderer.removeListener("clerk:auth-error", handler)
   },
 
+  // Composio auth events (OAuth callback from deep link)
+  onComposioAuthComplete: (callback: (data: { toolkitName: string; status: string }) => void) => {
+    const handler = (_event: unknown, data: { toolkitName: string; status: string }) => callback(data)
+    ipcRenderer.on("composio:auth-complete", handler)
+    return () => ipcRenderer.removeListener("composio:auth-complete", handler)
+  },
+
   // Shortcut events (from main process menu accelerators)
   onShortcutNewAgent: (callback: () => void) => {
     const handler = () => callback()
@@ -246,6 +253,8 @@ export interface DesktopApi {
   // Clerk auth
   onClerkAuthSuccess: (callback: (data: { userId: string }) => void) => () => void
   onClerkAuthError: (callback: (data: { error: string }) => void) => () => void
+  // Composio auth
+  onComposioAuthComplete: (callback: (data: { toolkitName: string; status: string }) => void) => () => void
   // Shortcuts
   onShortcutNewAgent: (callback: () => void) => () => void
   // File changes
