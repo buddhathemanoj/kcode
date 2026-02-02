@@ -920,7 +920,7 @@ export async function createWorktreeForChat(
 
 		const branch = generateBranchName();
 		// Use os.homedir() for cross-platform compatibility (Windows uses USERPROFILE, not HOME)
-		const worktreesDir = join(os.homedir(), ".kcode", "worktrees");
+		const worktreesDir = join(os.homedir(), ".anchor", "worktrees");
 		const worktreePath = join(worktreesDir, projectId, chatId);
 
 		await createWorktree(projectPath, branch, worktreePath, `origin/${baseBranch}`);

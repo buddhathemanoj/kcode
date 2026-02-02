@@ -28,7 +28,7 @@ async function getStore() {
       Store = (await import("electron-store")).default
     }
     store = new Store({
-      name: "kcode-clerk-auth",
+      name: "anchor-clerk-auth",
     })
   }
   return store

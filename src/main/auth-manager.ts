@@ -1,5 +1,5 @@
 /**
- * Auth Manager for kCode
+ * Auth Manager for Anchor
  *
  * Supports two modes:
  * 1. Environment variables (for development/CI) - MAIN_VITE_* vars

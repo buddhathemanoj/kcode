@@ -24,13 +24,13 @@ const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
 
 // Deep link protocol (must match package.json build.protocols.schemes)
 // Use different protocol in dev to avoid conflicts with production app
-const PROTOCOL = IS_DEV ? "kcode-dev" : "kcode"
+const PROTOCOL = IS_DEV ? "anchor-dev" : "anchor"
 
 // Set dev mode userData path BEFORE requestSingleInstanceLock()
 // This ensures dev and prod have separate instance locks
 if (IS_DEV) {
   const { join } = require("path")
-  const devUserData = join(app.getPath("userData"), "..", "kcode Dev")
+  const devUserData = join(app.getPath("userData"), "..", "Anchor Dev")
   app.setPath("userData", devUserData)
   console.log("[Dev] Using separate userData path:", devUserData)
 }
@@ -84,7 +84,7 @@ function handleDeepLink(url: string): void {
   try {
     const parsedUrl = new URL(url)
     
-    // Handle Clerk auth callback: kcode://auth/callback?token=xxx&refresh=yyy
+    // Handle Clerk auth callback: anchor://auth/callback?token=xxx&refresh=yyy
     if (parsedUrl.host === "auth" && parsedUrl.pathname === "/callback") {
       console.log("[DeepLink] Clerk auth callback detected")
       
@@ -217,7 +217,7 @@ if (process.env.ELECTRON_RENDERER_URL) {
 <head>
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
-  <title>kcode - Authentication</title>
+  <title>Anchor - Authentication</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -367,7 +367,7 @@ if (gotTheLock) {
   app.whenReady().then(async () => {
     // Set dev mode app name (userData path was already set before requestSingleInstanceLock)
     if (IS_DEV) {
-      app.name = "kcode Dev"
+      app.name = "Anchor Dev"
     }
 
     // Register protocol handler (must be after app is ready)
@@ -382,10 +382,10 @@ if (gotTheLock) {
 
     // Set app user model ID for Windows (different in dev to avoid taskbar conflicts)
     if (process.platform === "win32") {
-      app.setAppUserModelId(IS_DEV ? "io.kosal.kcode.dev" : "io.kosal.kcode")
+      app.setAppUserModelId(IS_DEV ? "io.kosal.anchor.dev" : "io.kosal.anchor")
     }
 
-    console.log(`[App] Starting kcode${IS_DEV ? " (DEV)" : ""}...`)
+    console.log(`[App] Starting Anchor${IS_DEV ? " (DEV)" : ""}...`)
 
     // Verify protocol registration after app is ready
     // This helps diagnose first-install issues where the protocol isn't recognized yet
@@ -409,7 +409,7 @@ if (gotTheLock) {
 
     // Set About panel options with Claude Code version
     app.setAboutPanelOptions({
-      applicationName: "kcode",
+      applicationName: "Anchor",
       applicationVersion: app.getVersion(),
       version: `Claude Code ${claudeCodeVersion}`,
       copyright: "Copyright © 2026 Kosal",
@@ -425,7 +425,7 @@ if (gotTheLock) {
         {
           label: app.name,
           submenu: [
-            { role: "about", label: "About kcode" },
+            { role: "about", label: "About Anchor" },
             {
               label: updateAvailable
                 ? `Update to v${availableVersion}...`

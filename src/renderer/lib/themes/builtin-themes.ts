@@ -9,12 +9,12 @@ import type { VSCodeFullTheme } from "../atoms"
 import { CURSOR_DARK, CURSOR_LIGHT, CURSOR_MIDNIGHT } from "./cursor-themes"
 
 /**
- * kCode Dark - Default dark theme matching the app's original design
+ * Anchor Dark - Default dark theme matching the app's original design
  * Uses the brand blue (#0034FF) as primary/accent color
  */
-const KCODE_DARK: VSCodeFullTheme = {
-  id: "kcode-dark",
-  name: "kCode Dark",
+const ANCHOR_DARK: VSCodeFullTheme = {
+  id: "anchor-dark",
+  name: "Anchor Dark",
   type: "dark",
   source: "builtin",
   colors: {
@@ -73,12 +73,12 @@ const KCODE_DARK: VSCodeFullTheme = {
 }
 
 /**
- * kCode Light - Default light theme matching the app's original design
+ * Anchor Light - Default light theme matching the app's original design
  * Uses the brand blue (#0034FF) as primary/accent color
  */
-const KCODE_LIGHT: VSCodeFullTheme = {
-  id: "kcode-light",
-  name: "kCode Light",
+const ANCHOR_LIGHT: VSCodeFullTheme = {
+  id: "anchor-light",
+  name: "Anchor Light",
   type: "light",
   source: "builtin",
   colors: {
@@ -591,9 +591,9 @@ const CLAUDE_DARK: VSCodeFullTheme = {
  * All built-in themes
  */
 export const BUILTIN_THEMES: VSCodeFullTheme[] = [
-  // kCode Default themes (first)
-  KCODE_DARK,
-  KCODE_LIGHT,
+  // Anchor Default themes (first)
+  ANCHOR_DARK,
+  ANCHOR_LIGHT,
   // Cursor themes
   CURSOR_DARK,
   CURSOR_LIGHT,
@@ -626,5 +626,5 @@ export function getBuiltinThemesByType(type: "light" | "dark"): VSCodeFullTheme[
 /**
  * Default theme IDs for light/dark modes
  */
-export const DEFAULT_LIGHT_THEME_ID = "kcode-light"
-export const DEFAULT_DARK_THEME_ID = "kcode-dark"
+export const DEFAULT_LIGHT_THEME_ID = "anchor-light"
+export const DEFAULT_DARK_THEME_ID = "anchor-dark"

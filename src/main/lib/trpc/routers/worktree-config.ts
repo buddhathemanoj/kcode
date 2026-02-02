@@ -18,7 +18,7 @@ const WorktreeConfigSchema = z.object({
 export const worktreeConfigRouter = router({
   /**
    * Get worktree config for a project
-   * Detects from .cursor/worktrees.json or .kcode/worktree.json
+   * Detects from .cursor/worktrees.json or .anchor/worktree.json
    */
   get: publicProcedure
     .input(z.object({ projectId: z.string() }))
@@ -54,7 +54,7 @@ export const worktreeConfigRouter = router({
       z.object({
         projectId: z.string(),
         config: WorktreeConfigSchema,
-        target: z.enum(["cursor", "kcode"]).or(z.string()).default("kcode"),
+        target: z.enum(["cursor", "anchor"]).or(z.string()).default("anchor"),
       }),
     )
     .mutation(async ({ input }) => {

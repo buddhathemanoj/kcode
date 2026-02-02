@@ -366,7 +366,7 @@ export async function warmupMcpCache(): Promise<void> {
     for (const [projectPath, projectConfig] of Object.entries(config.projects)) {
       if ((projectConfig as any)?.mcpServers) {
         // Skip worktrees - they're temporary git working directories and inherit MCP from parent
-        if (projectPath.includes("/.kcode/worktrees/") || projectPath.includes("\\.kcode\\worktrees\\")) {
+        if (projectPath.includes("/.anchor/worktrees/") || projectPath.includes("\\.anchor\\worktrees\\")) {
           continue
         }
 

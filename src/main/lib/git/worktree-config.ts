@@ -11,7 +11,7 @@ export interface WorktreeConfig {
   "setup-worktree"?: string[] | string
 }
 
-export type WorktreeConfigSource = "custom" | "cursor" | "kcode" | null
+export type WorktreeConfigSource = "custom" | "cursor" | "anchor" | null
 
 export interface DetectedWorktreeConfig {
   config: WorktreeConfig | null
@@ -20,7 +20,7 @@ export interface DetectedWorktreeConfig {
 }
 
 const CURSOR_CONFIG_PATH = ".cursor/worktrees.json"
-const ONECODE_CONFIG_PATH = ".kcode/worktree.json"
+const ONECODE_CONFIG_PATH = ".anchor/worktree.json"
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -42,7 +42,7 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
 
 /**
  * Detect worktree config for a project
- * Priority: custom path > .cursor/worktrees.json > .kcode/worktree.json
+ * Priority: custom path > .cursor/worktrees.json > .anchor/worktree.json
  */
 export async function detectWorktreeConfig(
   projectPath: string,
@@ -68,12 +68,12 @@ export async function detectWorktreeConfig(
     }
   }
 
-  // 3. Check .kcode/worktree.json
+  // 3. Check .anchor/worktree.json
   const onecodePath = join(projectPath, ONECODE_CONFIG_PATH)
   if (await fileExists(onecodePath)) {
     const config = await readJsonFile<WorktreeConfig>(onecodePath)
     if (config) {
-      return { config, path: onecodePath, source: "kcode" }
+      return { config, path: onecodePath, source: "anchor" }
     }
   }
 
@@ -112,13 +112,13 @@ export async function getAvailableConfigPaths(
 export async function saveWorktreeConfig(
   projectPath: string,
   config: WorktreeConfig,
-  target: "cursor" | "kcode" | string = "kcode",
+  target: "cursor" | "anchor" | string = "anchor",
 ): Promise<{ success: boolean; path: string; error?: string }> {
   let targetPath: string
 
   if (target === "cursor") {
     targetPath = join(projectPath, CURSOR_CONFIG_PATH)
-  } else if (target === "kcode") {
+  } else if (target === "anchor") {
     targetPath = join(projectPath, ONECODE_CONFIG_PATH)
   } else {
     // Custom path

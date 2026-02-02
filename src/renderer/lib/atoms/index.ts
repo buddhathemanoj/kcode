@@ -405,8 +405,10 @@ export type VSCodeFullTheme = {
  * Maps old theme IDs to new ones for backward compatibility
  */
 const THEME_ID_MIGRATIONS: Record<string, string> = {
-  "21st-dark": "kcode-dark",
-  "21st-light": "kcode-light",
+  "21st-dark": "anchor-dark",
+  "21st-light": "anchor-light",
+  "kcode-dark": "anchor-dark",
+  "kcode-light": "anchor-light",
 }
 
 /**
@@ -460,8 +462,8 @@ export const selectedFullThemeIdAtom = atomWithStorage<string | null>(
  */
 export const systemLightThemeIdAtom = atomWithStorage<string>(
   "preferences:system-light-theme-id",
-  "kcode-light", // Default light theme
-  createThemeStorage<string>("kcode-light"),
+  "anchor-light", // Default light theme
+  createThemeStorage<string>("anchor-light"),
   { getOnInit: true },
 )
 
@@ -470,8 +472,8 @@ export const systemLightThemeIdAtom = atomWithStorage<string>(
  */
 export const systemDarkThemeIdAtom = atomWithStorage<string>(
   "preferences:system-dark-theme-id",
-  "kcode-dark", // Default dark theme
-  createThemeStorage<string>("kcode-dark"),
+  "anchor-dark", // Default dark theme
+  createThemeStorage<string>("anchor-dark"),
   { getOnInit: true },
 )
 
@@ -624,7 +626,7 @@ export type SessionInfo = {
 // Persisted to localStorage so MCP tools are visible after page refresh
 // Updated when a new chat session starts
 export const sessionInfoAtom = atomWithStorage<SessionInfo | null>(
-  "kcode-session-info",
+  "anchor-session-info",
   null,
   undefined,
   { getOnInit: true },

@@ -46,9 +46,9 @@ export function useChangedFilesTracking(
       }
     }
 
-    // Handle worktree paths: /Users/.../.kcode/worktrees/{chatId}/{subChatId}/relativePath
+    // Handle worktree paths: /Users/.../.anchor/worktrees/{chatId}/{subChatId}/relativePath
     // Extract everything after the subChatId directory
-    const worktreeMatch = filePath.match(/\.kcode\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
+    const worktreeMatch = filePath.match(/\.anchor\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
     if (worktreeMatch) {
       return worktreeMatch[1]
     }

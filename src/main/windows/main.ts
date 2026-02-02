@@ -222,7 +222,7 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 500, // Allow narrow mobile-like mode
     minHeight: 600,
     show: false,
-    title: "kcode",
+    title: "Anchor",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#09090b" : "#ffffff",
     // hiddenInset shows native traffic lights inset in the window
     // Start with traffic lights off-screen (custom ones shown in normal mode)

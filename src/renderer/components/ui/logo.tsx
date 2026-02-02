@@ -13,7 +13,7 @@ export function Logo({ className, fill, ...props }: LogoProps) {
     <img
       src={logoPng}
       className={cn("object-contain", className)}
-      alt="kcode"
+      alt="Anchor"
       {...props}
     />
   )

@@ -11,7 +11,7 @@ export function ClerkLoginScreen() {
         <div className="flex flex-col items-center space-y-4 text-center">
           <Logo className="h-12 w-12" />
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">kcode</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Anchor</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               AI-Powered Code Assistant
             </p>

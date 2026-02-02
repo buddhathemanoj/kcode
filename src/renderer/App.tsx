@@ -125,7 +125,7 @@ function AppContent() {
     return <AgentsLayout />
   }
 
-  // kCode uses Azure credentials - show Azure onboarding if not configured
+  // Anchor uses Azure credentials - show Azure onboarding if not configured
   if (!apiKeyOnboardingCompleted) {
     return <AzureOnboardingPage />
   }

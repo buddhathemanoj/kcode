@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is this?
 
-**kcode** - A local-first Electron desktop app for AI-powered code assistance. Users create chat sessions linked to local project folders, interact with Claude in Plan or Agent mode, and see real-time tool execution (bash, file edits, web search, etc.).
+**Anchor** - A local-first Electron desktop app for AI-powered code assistance. Users create chat sessions linked to local project folders, interact with Claude in Plan or Agent mode, and see real-time tool execution (bash, file edits, web search, etc.).
 
 ## Commands
 
@@ -114,7 +114,7 @@ const projectChats = db.select().from(chats).where(eq(chats.projectId, id)).all(
 
 ## Authentication (Microsoft Foundry)
 
-kcode uses **Microsoft Azure AI Foundry** for Claude API access. This is the recommended approach for production builds.
+Anchor uses **Microsoft Azure AI Foundry** for Claude API access. This is the recommended approach for production builds.
 
 ### How It Works
 
@@ -259,22 +259,22 @@ When testing behavior for new users, you need to simulate a fresh install:
 
 ```bash
 # 1. Clear all app data (config, database, settings)
-rm -rf ~/Library/Application\ Support/kcode\ Dev/
+rm -rf ~/Library/Application\ Support/Anchor\ Dev/
 
 # 2. Reset macOS protocol handler registration (if testing deep links)
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -kill -r -domain local -domain system -domain user
 
 # 3. Clear app preferences
-defaults delete io.kosal.kcode.dev  # Dev mode
-defaults delete io.kosal.kcode      # Production
+defaults delete io.kosal.anchor.dev  # Dev mode
+defaults delete io.kosal.anchor      # Production
 
 # 4. Run in dev mode with clean state
 bun run dev
 ```
 
 **Dev vs Production App:**
-- Dev mode uses `kcode-dev://` protocol
-- Dev mode uses separate userData path (`~/Library/Application Support/kcode Dev/`)
+- Dev mode uses `anchor-dev://` protocol
+- Dev mode uses separate userData path (`~/Library/Application Support/Anchor Dev/`)
 - This prevents conflicts between dev and production installs
 
 ## Releasing a New Version
@@ -286,9 +286,9 @@ bun run dev
 bun run release:local
 
 # Install to Applications
-hdiutil attach release/kcode-*.dmg
-cp -R /Volumes/kcode*/kcode.app /Applications/
-hdiutil detach /Volumes/kcode*
+hdiutil attach release/Anchor-*.dmg
+cp -R /Volumes/Anchor*/Anchor.app /Applications/
+hdiutil detach /Volumes/Anchor*
 ```
 
 ### CI/CD Builds (GitHub Actions)
@@ -319,14 +319,14 @@ bun run release
 |------|---------|
 | `latest-mac.yml` | Manifest for arm64 auto-updates |
 | `latest-mac-x64.yml` | Manifest for Intel auto-updates |
-| `kcode-{version}-arm64-mac.zip` | Auto-update payload (arm64) |
-| `kcode-{version}-mac.zip` | Auto-update payload (Intel) |
-| `kcode-{version}-arm64.dmg` | Manual download (arm64) |
-| `kcode-{version}.dmg` | Manual download (Intel) |
+| `Anchor-{version}-arm64-mac.zip` | Auto-update payload (arm64) |
+| `Anchor-{version}-mac.zip` | Auto-update payload (Intel) |
+| `Anchor-{version}-arm64.dmg` | Manual download (arm64) |
+| `Anchor-{version}.dmg` | Manual download (Intel) |
 
 ### Auto-Update Flow
 
-1. App checks `https://cdn.kosal.io/releases/kcode/latest-mac.yml` on startup and when window regains focus (with 1 min cooldown)
+1. App checks `https://cdn.kosal.io/releases/anchor/latest-mac.yml` on startup and when window regains focus (with 1 min cooldown)
 2. If version in manifest > current version, shows "Update Available" banner
 3. User clicks Download → downloads ZIP in background
 4. User clicks "Restart Now" → installs update and restarts

@@ -265,9 +265,9 @@ export const projectsRouter = router({
         throw new Error("Invalid GitHub URL or repo format")
       }
 
-      // Clone to ~/.kcode/repos/{owner}/{repo}
+      // Clone to ~/.anchor/repos/{owner}/{repo}
       const homePath = app.getPath("home")
-      const reposDir = join(homePath, ".kcode", "repos", owner)
+      const reposDir = join(homePath, ".anchor", "repos", owner)
       const clonePath = join(reposDir, repo)
 
       // Check if already cloned

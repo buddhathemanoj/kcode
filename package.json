@@ -1,8 +1,8 @@
 {
-  "name": "kcode-desktop",
+  "name": "anchor-desktop",
   "version": "0.0.27",
   "private": true,
-  "description": "kcode - UI for parallel work with AI agents",
+  "description": "Anchor - UI for parallel work with AI agents",
   "author": {
     "name": "Kosal",
     "email": "info@kosal.io"
@@ -127,14 +127,14 @@
     "vite": "^6.3.4"
   },
   "build": {
-    "appId": "io.kosal.kcode",
-    "productName": "kcode",
+    "appId": "io.kosal.anchor",
+    "productName": "Anchor",
     "npmRebuild": true,
     "protocols": [
       {
-        "name": "kcode",
+        "name": "anchor",
         "schemes": [
-          "kcode"
+          "anchor"
         ]
       }
     ],
@@ -235,7 +235,7 @@
     },
     "publish": {
       "provider": "generic",
-      "url": "https://cdn.kosal.io/releases/kcode"
+      "url": "https://cdn.kosal.io/releases/anchor"
     }
   },
   "pnpm": {

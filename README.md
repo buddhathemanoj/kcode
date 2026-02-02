@@ -1,4 +1,4 @@
-# kcode
+# Anchor
 
 Best UI for Claude Code with local and remote agent execution.
 
@@ -63,7 +63,7 @@ bun run package:mac  # or package:win, package:linux
 
 ## Configuration
 
-kcode uses Azure Claude API credentials. On first launch, you'll need to configure:
+Anchor uses Azure Claude API credentials. On first launch, you'll need to configure:
 
 1. **Endpoint** - Your Azure OpenAI endpoint (e.g., `https://your-resource.openai.azure.com`)
 2. **API Key** - Your Azure API key

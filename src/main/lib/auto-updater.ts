@@ -24,7 +24,7 @@ function initAutoUpdaterConfig() {
 }
 
 // CDN base URL for updates
-const CDN_BASE = "https://cdn.kosal.io/releases/kcode"
+const CDN_BASE = "https://cdn.kosal.io/releases/anchor"
 
 // Minimum interval between update checks (prevent spam on rapid focus/blur)
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute

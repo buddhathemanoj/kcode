@@ -115,7 +115,7 @@ export function AgentsProjectWorktreeTab({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   // Local state
-  const [saveTarget, setSaveTarget] = useState<"cursor" | "kcode">("kcode")
+  const [saveTarget, setSaveTarget] = useState<"cursor" | "anchor">("anchor")
   const [commands, setCommands] = useState<string[]>([""])
   const [unixCommands, setUnixCommands] = useState<string[]>([])
   const [windowsCommands, setWindowsCommands] = useState<string[]>([])
@@ -127,7 +127,7 @@ export function AgentsProjectWorktreeTab({
       if (configData.source === "cursor") {
         setSaveTarget("cursor")
       } else {
-        setSaveTarget("kcode")
+        setSaveTarget("anchor")
       }
 
       if (configData.config) {
@@ -283,18 +283,18 @@ export function AgentsProjectWorktreeTab({
             <div className="flex-shrink-0 w-auto min-w-56 max-w-80">
               <Select
                 value={saveTarget}
-                onValueChange={(v) => setSaveTarget(v as "cursor" | "kcode")}
+                onValueChange={(v) => setSaveTarget(v as "cursor" | "anchor")}
               >
                 <SelectTrigger className="w-full">
                   <span className="text-sm font-mono truncate">
                     {saveTarget === "cursor"
                       ? ".cursor/worktrees.json"
-                      : ".kcode/worktree.json"}
+                      : ".anchor/worktree.json"}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kcode">
-                    .kcode/worktree.json
+                  <SelectItem value="anchor">
+                    .anchor/worktree.json
                   </SelectItem>
                   {cursorExists && (
                     <SelectItem value="cursor">
