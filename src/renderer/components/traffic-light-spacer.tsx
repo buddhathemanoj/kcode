@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "../lib/utils"
+import { isMacOS } from "../lib/utils/platform"
 
 interface TrafficLightSpacerProps {
   isFullscreen?: boolean
@@ -16,8 +17,8 @@ export function TrafficLightSpacer({
   isDesktop = false,
   className,
 }: TrafficLightSpacerProps) {
-  // Only show spacer on desktop when not in fullscreen
-  if (!isDesktop || isFullscreen) {
+  // Only show spacer on macOS desktop when not in fullscreen
+  if (!isDesktop || !isMacOS() || isFullscreen) {
     return null
   }
 
@@ -41,8 +42,8 @@ export function TrafficLights({
   isDesktop = false,
   className,
 }: TrafficLightsProps) {
-  // Only show on desktop when not in fullscreen
-  if (!isDesktop || isFullscreen) {
+  // Only show on macOS desktop when not in fullscreen
+  if (!isDesktop || !isMacOS() || isFullscreen) {
     return null
   }
 
