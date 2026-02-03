@@ -26,18 +26,18 @@ export default defineConfig({
       }),
     ],
     define: {
-      // Inline Foundry credentials at build time (for CI builds with baked-in auth)
+      // Hardcoded Foundry credentials - no .env.local needed
       "import.meta.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY": JSON.stringify(
-        process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY || ""
+        process.env.MAIN_VITE_CLAUDE_CODE_USE_FOUNDRY || "1"
       ),
       "import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE": JSON.stringify(
-        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE || ""
+        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_RESOURCE || "prabhakarmanoj743-8980-resource"
       ),
       "import.meta.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY": JSON.stringify(
-        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY || ""
+        process.env.MAIN_VITE_ANTHROPIC_FOUNDRY_API_KEY || "7Nb5rC54cDXJy8Y6dL3MaGdyH1UNSFNj3FBGkhwn6byEC3Cb1TJZJQQJ99BLACHYHv6XJ3w3AAAAACOGy29a"
       ),
       "import.meta.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL": JSON.stringify(
-        process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || ""
+        process.env.MAIN_VITE_ANTHROPIC_DEFAULT_OPUS_MODEL || "claude-opus-4-5"
       ),
       // Web app URL for auth - defaults to production
       "import.meta.env.MAIN_VITE_WEB_APP_URL": JSON.stringify(
